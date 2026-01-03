@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, push, set, get, update } from 'firebase/database';
@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, IndianRupee, AlertTriangle } from 'lucide-react';
-import { deductCampaignBudget } from '@/lib/data-cache';
+import { deductCampaignBudget, fetchWalletData } from '@/lib/data-cache';
 
 const CreateCampaign = () => {
   const { profile } = useAuth();
@@ -31,15 +31,26 @@ const CreateCampaign = () => {
     rewardPerWorker: '',
   });
 
-  useState(() => {
+  useEffect(() => {
     const fetchBalance = async () => {
       if (profile?.uid) {
-        const snap = await get(ref(database, `wallets/${profile.uid}/addedBalance`));
-        if (snap.exists()) setWalletBalance(snap.val());
+        try {
+          const walletData = await fetchWalletData(profile.uid);
+          if (walletData) {
+            setWalletBalance(walletData.addedBalance || 0);
+          }
+        } catch (error) {
+          console.error('Error fetching wallet balance:', error);
+          toast({ 
+            title: 'Error', 
+            description: 'Failed to load wallet balance. Please try again.', 
+            variant: 'destructive' 
+          });
+        }
       }
     };
     fetchBalance();
-  });
+  }, [profile?.uid, toast]);
 
   const totalCost = (parseInt(form.totalWorkers) || 0) * (parseFloat(form.rewardPerWorker) || 0);
   const canAfford = walletBalance >= totalCost;
@@ -90,9 +101,9 @@ const CreateCampaign = () => {
         const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
         
         let userRecentCampaignCount = 0;
-        for (const campaign of Object.values(recentCampaigns)) {
-          const camp = campaign as any;
-          if (camp.creatorId === profile.uid && camp.createdAt > oneHourAgo) {
+        for (const [id, campaignData] of Object.entries(recentCampaigns)) {
+          const campaign = campaignData as any;
+          if (campaign.creatorId === profile.uid && campaign.createdAt > oneHourAgo) {
             userRecentCampaignCount++;
           }
         }
@@ -128,7 +139,7 @@ const CreateCampaign = () => {
       });
 
       // Use atomic operation to deduct from wallet and update campaign budget
-      const success = await deductCampaignBudget(campaignRef.key, totalCost, profile.uid);
+      const success = await deductCampaignBudget(campaignRef.key, totalCost, profile.uid, profile.uid);
       
       if (!success) {
         // If the atomic operation failed, remove the campaign
