@@ -25,7 +25,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "migrate-profiles": "tsx src/lib/migrateUserProfiles.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

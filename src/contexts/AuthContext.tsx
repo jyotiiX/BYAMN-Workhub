@@ -31,6 +31,7 @@ interface UserProfile {
   earnedMoney: number;
   addedMoney: number;
   approvedWorks: number;
+  totalWithdrawn: number;
 }
 
 interface AuthContextType {
@@ -104,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       earnedMoney: 0,
       addedMoney: 0,
       approvedWorks: 0,
+      totalWithdrawn: 0,
     };
     
     await set(ref(database, `users/${user.uid}`), newProfile);

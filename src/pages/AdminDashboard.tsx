@@ -309,6 +309,11 @@ const AdminDashboard = () => {
                         earnedBalance: (wallet.earnedBalance || 0) - req.amount,
                         totalWithdrawn: (wallet.totalWithdrawn || 0) + req.amount
                     });
+                    
+                    // Also update user profile to track total withdrawn
+                    await update(ref(database, `users/${req.userId}`), {
+                        totalWithdrawn: (wallet.totalWithdrawn || 0) + req.amount
+                    });
                 }
             }
 
