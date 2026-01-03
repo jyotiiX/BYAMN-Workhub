@@ -47,27 +47,76 @@ const CreateCampaign = () => {
     e.preventDefault();
     if (!profile?.uid) return;
 
+    // Additional validation
+    const totalWorkers = parseInt(form.totalWorkers);
+    const rewardPerWorker = parseFloat(form.rewardPerWorker);
+    
+    if (isNaN(totalWorkers) || totalWorkers <= 0 || totalWorkers > 10000) {
+      toast({ 
+        title: 'Invalid Number of Workers', 
+        description: 'Please enter a valid number of workers (1-10,000).', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
+    if (isNaN(rewardPerWorker) || rewardPerWorker < 0.5 || rewardPerWorker > 10000) {
+      toast({ 
+        title: 'Invalid Reward', 
+        description: 'Reward per worker must be between ₹0.50 and ₹10,000.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
     if (!canAfford) {
       toast({ title: 'Insufficient Balance', description: 'Add money to your wallet first.', variant: 'destructive' });
       return;
     }
 
-    if (parseFloat(form.rewardPerWorker) < 0.5) {
+    if (rewardPerWorker < 0.5) {
       toast({ title: 'Invalid Reward', description: 'Minimum reward is ₹0.50 per worker.', variant: 'destructive' });
       return;
     }
 
     setLoading(true);
     try {
+      // Check for rate limiting (check recent campaigns)
+      const recentCampaignsSnap = await get(ref(database, `campaigns`));
+      if (recentCampaignsSnap.exists()) {
+        const recentCampaigns = recentCampaignsSnap.val();
+        const now = Date.now();
+        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
+        
+        let userRecentCampaignCount = 0;
+        for (const campaign of Object.values(recentCampaigns)) {
+          const camp = campaign as any;
+          if (camp.creatorId === profile.uid && camp.createdAt > oneHourAgo) {
+            userRecentCampaignCount++;
+          }
+        }
+        
+        // Limit to 2 campaigns per hour per user
+        if (userRecentCampaignCount >= 2) {
+          toast({
+            title: 'Rate Limit Exceeded',
+            description: 'You can only create 2 campaigns per hour.',
+            variant: 'destructive',
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
       const campaignRef = push(ref(database, 'campaigns'));
       await set(campaignRef, {
         title: form.title,
         description: form.description,
         instructions: form.instructions,
         category: form.category,
-        totalWorkers: parseInt(form.totalWorkers),
+        totalWorkers: totalWorkers,
         completedWorkers: 0,
-        rewardPerWorker: parseFloat(form.rewardPerWorker),
+        rewardPerWorker: rewardPerWorker,
         totalBudget: totalCost,
         remainingBudget: totalCost,
         creatorId: profile.uid,
@@ -84,6 +133,7 @@ const CreateCampaign = () => {
       toast({ title: 'Campaign Created!', description: 'Your campaign is now live.' });
       navigate('/campaigns');
     } catch (error) {
+      console.error('Error creating campaign:', error);
       toast({ title: 'Error', description: 'Failed to create campaign.', variant: 'destructive' });
     } finally {
       setLoading(false);

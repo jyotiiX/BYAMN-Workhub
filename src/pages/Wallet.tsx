@@ -53,13 +53,13 @@ interface Transaction {
 }
 
 const addMoneySchema = z.object({
-  amount: z.number().min(10, 'Minimum amount is ₹10'),
-  upiTransactionId: z.string().min(10, 'Enter a valid UPI Transaction ID'),
+  amount: z.number().min(10, 'Minimum amount is ₹10').max(100000, 'Maximum amount is ₹100,000'),
+  upiTransactionId: z.string().min(10, 'Enter a valid UPI Transaction ID').max(50, 'UPI Transaction ID too long'),
 });
 
 const withdrawSchema = z.object({
-  amount: z.number().min(500, 'Minimum withdrawal is ₹500'),
-  upiId: z.string().min(5, 'Enter a valid UPI ID'),
+  amount: z.number().min(500, 'Minimum withdrawal is ₹500').max(50000, 'Maximum withdrawal is ₹50,000'),
+  upiId: z.string().min(5, 'Enter a valid UPI ID').max(50, 'UPI ID too long'),
 });
 
 const Wallet = () => {
@@ -133,8 +133,45 @@ const Wallet = () => {
       return;
     }
 
+    // Additional validation for amount
+    if (isNaN(amount) || amount <= 0) {
+      toast({
+        title: 'Invalid Amount',
+        description: 'Please enter a valid positive amount.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
+      // Check for rate limiting (check recent requests)
+      const recentTransSnap = await get(ref(database, `transactions/${profile.uid}`));
+      if (recentTransSnap.exists()) {
+        const recentTrans = recentTransSnap.val();
+        const now = Date.now();
+        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
+        
+        let recentAddMoneyCount = 0;
+        for (const trans of Object.values(recentTrans)) {
+          const transaction = trans as Transaction;
+          if (transaction.type === 'add_money' && transaction.createdAt > oneHourAgo) {
+            recentAddMoneyCount++;
+          }
+        }
+        
+        // Limit to 3 add money requests per hour
+        if (recentAddMoneyCount >= 3) {
+          toast({
+            title: 'Rate Limit Exceeded',
+            description: 'You can only submit 3 add money requests per hour.',
+            variant: 'destructive',
+          });
+          setSubmitting(false);
+          return;
+        }
+      }
+
       // Create transaction
       const transRef = push(ref(database, `transactions/${profile.uid}`));
       await set(transRef, {
@@ -171,6 +208,7 @@ const Wallet = () => {
       const walletSnap = await get(ref(database, `wallets/${profile.uid}`));
       if (walletSnap.exists()) setWallet(walletSnap.val());
     } catch (error) {
+      console.error('Error adding money:', error);
       toast({
         title: 'Error',
         description: 'Failed to submit request. Please try again.',
@@ -199,6 +237,16 @@ const Wallet = () => {
       return;
     }
 
+    // Additional validation for amount
+    if (isNaN(amount) || amount <= 0) {
+      toast({
+        title: 'Invalid Amount',
+        description: 'Please enter a valid positive amount.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (amount > wallet.earnedBalance) {
       toast({
         title: 'Insufficient Balance',
@@ -210,6 +258,33 @@ const Wallet = () => {
 
     setSubmitting(true);
     try {
+      // Check for rate limiting (check recent requests)
+      const recentTransSnap = await get(ref(database, `transactions/${profile.uid}`));
+      if (recentTransSnap.exists()) {
+        const recentTrans = recentTransSnap.val();
+        const now = Date.now();
+        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
+        
+        let recentWithdrawCount = 0;
+        for (const trans of Object.values(recentTrans)) {
+          const transaction = trans as Transaction;
+          if (transaction.type === 'withdrawal' && transaction.createdAt > oneHourAgo) {
+            recentWithdrawCount++;
+          }
+        }
+        
+        // Limit to 2 withdrawal requests per hour
+        if (recentWithdrawCount >= 2) {
+          toast({
+            title: 'Rate Limit Exceeded',
+            description: 'You can only submit 2 withdrawal requests per hour.',
+            variant: 'destructive',
+          });
+          setSubmitting(false);
+          return;
+        }
+      }
+
       // Create transaction
       const transRef = push(ref(database, `transactions/${profile.uid}`));
       await set(transRef, {
@@ -242,6 +317,7 @@ const Wallet = () => {
       setWithdrawOpen(false);
       setWithdrawForm({ amount: '', upiId: '' });
     } catch (error) {
+      console.error('Error withdrawing:', error);
       toast({
         title: 'Error',
         description: 'Failed to submit request. Please try again.',
