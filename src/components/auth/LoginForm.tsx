@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import { app } from "@/lib/firebase"; // make sure this points to your Firebase config
 
 export default function LoginForm() {
+  const auth = getAuth(app);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -12,6 +15,7 @@ export default function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
 
     // Basic validation
     if (!email.includes("@")) {
@@ -23,18 +27,29 @@ export default function LoginForm() {
       return;
     }
 
-    setError("");
     setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log("User logged in:", userCredential.user);
+      // Redirect or show success
+      alert("Login successful!");
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === "auth/user-not-found") {
+        setError("No user found with this email.");
+      } else if (err.code === "auth/wrong-password") {
+        setError("Incorrect password.");
+      } else {
+        setError("Failed to login. Please try again.");
+      }
+    } finally {
       setIsLoading(false);
-      alert("Login successful! (Demo)");
-    }, 2000);
+    }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 border rounded-lg shadow-md">
+    <div className="max-w-md mx-auto mt-10 p-6 border rounded-lg shadow-md bg-white">
       <h2 className="text-2xl font-semibold mb-6 text-center">Login</h2>
       <form onSubmit={handleSubmit} className="space-y-4 relative">
         <div>
@@ -77,9 +92,9 @@ export default function LoginForm() {
             isLoading ? "opacity-70 cursor-not-allowed" : ""
           }`}
         >
-          {isLoading ? (
+          {isLoading && (
             <span className="animate-spin border-2 border-white border-t-transparent rounded-full w-5 h-5 mr-2"></span>
-          ) : null}
+          )}
           {isLoading ? "Logging in..." : "Login"}
         </button>
       </form>
