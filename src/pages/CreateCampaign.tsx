@@ -14,24 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, IndianRupee, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { deductCampaignBudget, fetchWalletData } from '@/lib/data-cache';
-import { 
-  sanitizeInput, 
-  isValidCampaignTitle, 
-  isValidCampaignDescription, 
-  isValidCampaignInstructions, 
-  isValidCampaignCategory 
-} from '@/lib/utils';
-
-// --- 1. DEFINING THE FORM TYPE ---
-interface CampaignForm {
-  title: string;
-  description: string;
-  instructions: string;
-  category: string;
-  priority: 'low' | 'medium' | 'high';
-  totalWorkers: string;
-  rewardPerWorker: string;
-}
+import { sanitizeInput, isValidCampaignTitle, isValidCampaignDescription, isValidCampaignInstructions, isValidCampaignCategory } from '@/lib/utils';
 
 const CreateCampaign = () => {
   const { profile } = useAuth();
@@ -84,14 +67,40 @@ const CreateCampaign = () => {
     const sanitizedDescription = sanitizeInput(form.description);
     const sanitizedInstructions = sanitizeInput(form.instructions);
     
-    // Validation Logic
+    // Validate inputs
     if (!isValidCampaignTitle(sanitizedTitle)) {
-      toast({ title: 'Invalid Title', description: 'Title must be 3-100 characters.', variant: 'destructive' });
+      toast({ 
+        title: 'Invalid Title', 
+        description: 'Campaign title must be 3-100 characters long and not contain malicious content.', 
+        variant: 'destructive' 
+      });
       return;
     }
     
     if (!isValidCampaignDescription(sanitizedDescription)) {
-      toast({ title: 'Invalid Description', description: 'Description is too short or too long.', variant: 'destructive' });
+      toast({ 
+        title: 'Invalid Description', 
+        description: 'Campaign description must be 10-2000 characters long and not contain malicious content.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
+    if (!isValidCampaignInstructions(sanitizedInstructions)) {
+      toast({ 
+        title: 'Invalid Instructions', 
+        description: 'Campaign instructions must be 10-5000 characters long and not contain malicious content.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
+    if (!isValidCampaignCategory(form.category)) {
+      toast({ 
+        title: 'Invalid Category', 
+        description: 'Please select a valid campaign category.', 
+        variant: 'destructive' 
+      });
       return;
     }
     
