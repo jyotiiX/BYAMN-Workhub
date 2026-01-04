@@ -38,8 +38,16 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     return <Navigate to="/auth" replace />;
   }
 
-  if (requireAdmin && profile?.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
+  // Wait for profile to load if user is authenticated but profile is not yet available
+  if (user && !profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading profile...</p>
+        </div>
+      </div>
+    );
   }
 
   if (profile?.isBlocked) {
@@ -57,6 +65,10 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         </div>
       </div>
     );
+  }
+
+  if (requireAdmin && profile?.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

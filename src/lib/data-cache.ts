@@ -747,11 +747,15 @@ export const fetchTimeBasedLeaderboard = async (
         if (typeof userWorks === 'object' && userWorks !== null) {
           for (const [workId, workData] of Object.entries(userWorks as Record<string, any>)) {
             const work = workData as any;
-            if (work.status === 'approved' && work.submittedAt > timeThreshold) {
+            // Validate work data before processing
+            if (work && work.status === 'approved' && 
+                typeof work.submittedAt === 'number' && 
+                work.submittedAt > timeThreshold &&
+                work.submittedAt <= now + 60000) { // Allow 1 min future drift
               if (!userWorkCounts[userId]) {
                 userWorkCounts[userId] = 0;
               }
-              userWorkCounts[userId]++;
+              userWorkCounts[userId]++; 
             }
           }
         }
@@ -761,9 +765,9 @@ export const fetchTimeBasedLeaderboard = async (
       const leaderboard = Object.entries(usersData)
         .map(([uid, userData]: [string, any]) => ({
           uid,
-          fullName: userData.fullName,
-          profileImage: userData.profileImage,
-          approvedWorks: userWorkCounts[uid] || 0,
+          fullName: typeof userData.fullName === 'string' ? userData.fullName : 'Unknown',
+          profileImage: typeof userData.profileImage === 'string' ? userData.profileImage : null,
+          approvedWorks: typeof userWorkCounts[uid] === 'number' ? userWorkCounts[uid] : 0,
         }))
         .filter((user: any) => user.approvedWorks > 0)
         .sort((a: any, b: any) => b.approvedWorks - a.approvedWorks)
