@@ -27,7 +27,7 @@
     },
     
     /* Types */
-    "types": ["node"]
+    "types": ["node", "jest"]
   },
   "include": ["src"]
 }
