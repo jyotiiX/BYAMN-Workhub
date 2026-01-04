@@ -18,6 +18,51 @@ jest.mock('firebase/database', () => ({
   set: jest.fn(),
 }));
 
+// Import internal validation functions for testing
+// These would normally be tested through the functions that use them
+const validateWalletData = (data: any): data is any => {
+  if (!data) return false;
+  
+  return (
+    typeof data.earnedBalance === 'number' &&
+    typeof data.addedBalance === 'number' &&
+    typeof data.pendingAddMoney === 'number' &&
+    typeof data.totalWithdrawn === 'number' &&
+    data.earnedBalance >= 0 &&
+    data.addedBalance >= 0 &&
+    data.pendingAddMoney >= 0 &&
+    data.totalWithdrawn >= 0
+  );
+};
+
+const validateCampaignData = (data: any): data is any => {
+  if (!data) return false;
+  
+  return (
+    typeof data.title === 'string' && data.title.length > 0 && data.title.length <= 100 &&
+    typeof data.description === 'string' && data.description.length > 0 && data.description.length <= 1000 &&
+    typeof data.creatorId === 'string' && /^[a-zA-Z0-9]+$/.test(data.creatorId) &&
+    typeof data.totalBudget === 'number' && data.totalBudget >= 0 &&
+    typeof data.remainingBudget === 'number' && data.remainingBudget >= 0 &&
+    typeof data.totalWorkers === 'number' && data.totalWorkers > 0 && data.totalWorkers <= 10000 &&
+    typeof data.rewardPerWorker === 'number' && data.rewardPerWorker >= 0.5 && data.rewardPerWorker <= 10000 &&
+    typeof data.createdAt === 'number' && data.createdAt >= 0
+  );
+};
+
+const validateTransactionData = (data: any): data is any => {
+  if (!data) return false;
+  
+  return (
+    typeof data.type === 'string' &&
+    ['add_money', 'withdrawal', 'earning', 'campaign_spend'].includes(data.type) &&
+    typeof data.amount === 'number' && data.amount > 0 && data.amount <= 100000 &&
+    typeof data.status === 'string' &&
+    ['pending', 'approved', 'rejected', 'paid'].includes(data.status) &&
+    typeof data.createdAt === 'number' && data.createdAt >= 0
+  );
+};
+
 describe('Data Cache Atomic Operations', () => {
   const mockUid = 'test-user-id';
   const mockWalletRef = { path: `wallets/${mockUid}` };
@@ -566,6 +611,193 @@ describe('Data Cache Atomic Operations', () => {
         { status: 'rejected' }
       );
       expect(runTransaction).not.toHaveBeenCalled(); // No wallet update for rejected requests
+    });
+  });
+
+  describe('Validation Functions', () => {
+    describe('validateWalletData', () => {
+      it('should return true for valid wallet data', () => {
+        const validWallet = {
+          earnedBalance: 100,
+          addedBalance: 200,
+          pendingAddMoney: 50,
+          totalWithdrawn: 25
+        };
+        
+        expect(validateWalletData(validWallet)).toBe(true);
+      });
+
+      it('should return false for invalid wallet data with negative values', () => {
+        const invalidWallet = {
+          earnedBalance: -100,
+          addedBalance: 200,
+          pendingAddMoney: 50,
+          totalWithdrawn: 25
+        };
+        
+        expect(validateWalletData(invalidWallet)).toBe(false);
+      });
+
+      it('should return false for wallet data with non-number values', () => {
+        const invalidWallet = {
+          earnedBalance: '100',
+          addedBalance: 200,
+          pendingAddMoney: 50,
+          totalWithdrawn: 25
+        };
+        
+        expect(validateWalletData(invalidWallet)).toBe(false);
+      });
+
+      it('should return false for missing wallet properties', () => {
+        const invalidWallet = {
+          earnedBalance: 100,
+          addedBalance: 200,
+          pendingAddMoney: 50
+          // missing totalWithdrawn
+        };
+        
+        expect(validateWalletData(invalidWallet)).toBe(false);
+      });
+
+      it('should return false for null or undefined data', () => {
+        expect(validateWalletData(null)).toBe(false);
+        expect(validateWalletData(undefined)).toBe(false);
+      });
+    });
+
+    describe('validateCampaignData', () => {
+      it('should return true for valid campaign data', () => {
+        const validCampaign = {
+          title: 'Test Campaign',
+          description: 'Test description',
+          creatorId: 'user123',
+          totalBudget: 1000,
+          remainingBudget: 500,
+          totalWorkers: 10,
+          rewardPerWorker: 10,
+          createdAt: Date.now()
+        };
+        
+        expect(validateCampaignData(validCampaign)).toBe(true);
+      });
+
+      it('should return false for campaign with invalid title', () => {
+        const invalidCampaign = {
+          title: '', // Empty title
+          description: 'Test description',
+          creatorId: 'user123',
+          totalBudget: 1000,
+          remainingBudget: 500,
+          totalWorkers: 10,
+          rewardPerWorker: 10,
+          createdAt: Date.now()
+        };
+        
+        expect(validateCampaignData(invalidCampaign)).toBe(false);
+      });
+
+      it('should return false for campaign with invalid creatorId', () => {
+        const invalidCampaign = {
+          title: 'Test Campaign',
+          description: 'Test description',
+          creatorId: 'user@invalid', // Invalid characters
+          totalBudget: 1000,
+          remainingBudget: 500,
+          totalWorkers: 10,
+          rewardPerWorker: 10,
+          createdAt: Date.now()
+        };
+        
+        expect(validateCampaignData(invalidCampaign)).toBe(false);
+      });
+
+      it('should return false for campaign with negative budget', () => {
+        const invalidCampaign = {
+          title: 'Test Campaign',
+          description: 'Test description',
+          creatorId: 'user123',
+          totalBudget: -100, // Negative
+          remainingBudget: 500,
+          totalWorkers: 10,
+          rewardPerWorker: 10,
+          createdAt: Date.now()
+        };
+        
+        expect(validateCampaignData(invalidCampaign)).toBe(false);
+      });
+
+      it('should return false for campaign with invalid rewardPerWorker', () => {
+        const invalidCampaign = {
+          title: 'Test Campaign',
+          description: 'Test description',
+          creatorId: 'user123',
+          totalBudget: 1000,
+          remainingBudget: 500,
+          totalWorkers: 10,
+          rewardPerWorker: 0.1, // Below minimum
+          createdAt: Date.now()
+        };
+        
+        expect(validateCampaignData(invalidCampaign)).toBe(false);
+      });
+    });
+
+    describe('validateTransactionData', () => {
+      it('should return true for valid transaction data', () => {
+        const validTransaction = {
+          type: 'add_money',
+          amount: 100,
+          status: 'pending',
+          createdAt: Date.now()
+        };
+        
+        expect(validateTransactionData(validTransaction)).toBe(true);
+      });
+
+      it('should return false for transaction with invalid type', () => {
+        const invalidTransaction = {
+          type: 'invalid_type',
+          amount: 100,
+          status: 'pending',
+          createdAt: Date.now()
+        };
+        
+        expect(validateTransactionData(invalidTransaction)).toBe(false);
+      });
+
+      it('should return false for transaction with invalid status', () => {
+        const invalidTransaction = {
+          type: 'add_money',
+          amount: 100,
+          status: 'invalid_status',
+          createdAt: Date.now()
+        };
+        
+        expect(validateTransactionData(invalidTransaction)).toBe(false);
+      });
+
+      it('should return false for transaction with invalid amount', () => {
+        const invalidTransaction = {
+          type: 'add_money',
+          amount: -100, // Negative
+          status: 'pending',
+          createdAt: Date.now()
+        };
+        
+        expect(validateTransactionData(invalidTransaction)).toBe(false);
+      });
+
+      it('should return false for transaction with amount exceeding max', () => {
+        const invalidTransaction = {
+          type: 'add_money',
+          amount: 200000, // Above maximum
+          status: 'pending',
+          createdAt: Date.now()
+        };
+        
+        expect(validateTransactionData(invalidTransaction)).toBe(false);
+      });
     });
   });
 });

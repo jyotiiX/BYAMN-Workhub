@@ -1154,7 +1154,100 @@ export const rejectWorkAndRestoreCampaignBudget = async (
   }
 };
 
+// Utility function to fetch time-based leaderboard data
+export const fetchTimeBasedLeaderboard = async (
+  period: 'daily' | 'weekly' | 'monthly'
+): Promise<any> => {
+  const cacheKey = `leaderboard:${period}`;
+  
+  // Check cache first
+  const cached = dataCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
 
+  // Check if already fetching
+  if (dataCache.isFetching(cacheKey)) {
+    return dataCache.getPending(cacheKey);
+  }
+
+  // Fetch data
+  const promise = Promise.all([
+    get(ref(database, 'users')),
+    get(ref(database, 'works'))
+  ])
+    .then(async ([usersSnap, worksSnap]) => {
+      if (!usersSnap.exists() || !worksSnap.exists()) {
+        return [];
+      }
+
+      const usersData = usersSnap.val();
+      const worksData = worksSnap.val();
+      
+      // Calculate time thresholds
+      const now = Date.now();
+      let timeThreshold = 0;
+      
+      switch (period) {
+        case 'daily':
+          timeThreshold = now - (24 * 60 * 60 * 1000); // 24 hours ago
+          break;
+        case 'weekly':
+          timeThreshold = now - (7 * 24 * 60 * 60 * 1000); // 7 days ago
+          break;
+        case 'monthly':
+          timeThreshold = now - (30 * 24 * 60 * 60 * 1000); // 30 days ago
+          break;
+      }
+
+      // Process works to count approved works by user and time period
+      const userWorkCounts: Record<string, number> = {};
+      
+      for (const [userId, userWorks] of Object.entries(worksData)) {
+        if (typeof userWorks === 'object' && userWorks !== null) {
+          for (const [workId, workData] of Object.entries(userWorks as Record<string, any>)) {
+            const work = workData as any;
+            // Validate work data before processing
+            if (work && work.status === 'approved' && 
+                typeof work.submittedAt === 'number' && 
+                work.submittedAt > timeThreshold &&
+                work.submittedAt <= now + 60000) { // Allow 1 min future drift
+              if (!userWorkCounts[userId]) {
+                userWorkCounts[userId] = 0;
+              }
+              userWorkCounts[userId]++; 
+            }
+          }
+        }
+      }
+
+      // Create leaderboard array
+      const leaderboard = Object.entries(usersData)
+        .map(([uid, userData]: [string, any]) => ({
+          uid,
+          fullName: typeof userData.fullName === 'string' ? userData.fullName : 'Unknown',
+          profileImage: typeof userData.profileImage === 'string' ? userData.profileImage : null,
+          approvedWorks: typeof userWorkCounts[uid] === 'number' ? userWorkCounts[uid] : 0,
+        }))
+        .filter((user: any) => user.approvedWorks > 0)
+        .sort((a: any, b: any) => b.approvedWorks - a.approvedWorks)
+        .slice(0, 50)
+        .map((user: any, index: number) => ({ ...user, rank: index + 1 }));
+
+      dataCache.set(cacheKey, leaderboard);
+      return leaderboard;
+    })
+    .catch((error) => {
+      console.error(`Error fetching ${period} leaderboard:`, error);
+      throw error;
+    })
+    .finally(() => {
+      dataCache.clearPending(cacheKey);
+    });
+
+  dataCache.setPending(cacheKey, promise);
+  return promise;
+};
 
 // Validation functions
 const validateWalletData = (data: any): data is WalletBalance => {
@@ -1430,8 +1523,7 @@ export const clearUserCache = (uid: string): void => {
 };
 
 // Utility function to fetch time-based leaderboard data
-const fetchTimeBasedLeaderboardV2 = async (
-timeframe: 'daily' | 'weekly' | 'monthly'): Promise<any[]> => {
+export const fetchTimeBasedLeaderboard = async (timeframe: 'daily' | 'weekly' | 'monthly'): Promise<any[]> => {
   // Validate input parameter
   if (!timeframe || !['daily', 'weekly', 'monthly'].includes(timeframe)) {
     throw new Error('Invalid timeframe provided. Must be daily, weekly, or monthly');
