@@ -135,6 +135,17 @@ export const dataCache = new DataCache();
 // Verify user authorization
 const verifyUserAuthorization = async (currentUserId: string, targetUserId: string, requiredRole?: 'admin'): Promise<boolean> => {
   try {
+    // Validate input parameters
+    if (!currentUserId || typeof currentUserId !== 'string') {
+      console.error('Invalid currentUserId provided for authorization check');
+      return false;
+    }
+    
+    if (!targetUserId || typeof targetUserId !== 'string') {
+      console.error('Invalid targetUserId provided for authorization check');
+      return false;
+    }
+    
     if (requiredRole === 'admin') {
       // Check if current user is an admin
       const userRef = ref(database, `users/${currentUserId}`);
@@ -142,7 +153,7 @@ const verifyUserAuthorization = async (currentUserId: string, targetUserId: stri
       
       if (userSnap.exists()) {
         const userData = userSnap.val() as UserProfile;
-        return userData.role === 'admin' && !userData.isBlocked;
+        return userData && userData.role === 'admin' && !userData.isBlocked;
       }
       return false;
     }
@@ -156,7 +167,7 @@ const verifyUserAuthorization = async (currentUserId: string, targetUserId: stri
     
     if (userSnap.exists()) {
       const userData = userSnap.val() as UserProfile;
-      return userData.role === 'admin' && !userData.isBlocked;
+      return userData && userData.role === 'admin' && !userData.isBlocked;
     }
     
     return false;
@@ -166,104 +177,21 @@ const verifyUserAuthorization = async (currentUserId: string, targetUserId: stri
   }
 };
 
-// Validate wallet data to prevent invalid values
-const validateWalletData = (walletData: WalletBalance): boolean => {
-  if (!walletData) return false;
-  
-  // Check for negative values
-  if (walletData.earnedBalance < 0 || 
-      walletData.addedBalance < 0 || 
-      walletData.pendingAddMoney < 0 || 
-      walletData.totalWithdrawn < 0) {
-    return false;
-  }
-  
-  // Check for reasonable upper limits
-  if (walletData.earnedBalance > 10000000 || 
-      walletData.addedBalance > 10000000 || 
-      walletData.pendingAddMoney > 10000000 || 
-      walletData.totalWithdrawn > 10000000) {
-    return false;
-  }
-  
-  return true;
-};
-
-// Validate transaction data
-const validateTransactionData = (transaction: any): boolean => {
-  if (!transaction || !transaction.type || !transaction.amount || !transaction.status || !transaction.createdAt) {
-    return false;
-  }
-  
-  // Validate transaction type
-  const validTypes = ['add_money', 'withdrawal', 'earning', 'campaign_spend'];
-  if (!validTypes.includes(transaction.type)) {
-    return false;
-  }
-  
-  // Validate amount
-  if (typeof transaction.amount !== 'number' || transaction.amount <= 0 || transaction.amount > 100000) {
-    return false;
-  }
-  
-  // Validate status
-  const validStatuses = ['pending', 'approved', 'rejected', 'paid'];
-  if (!validStatuses.includes(transaction.status)) {
-    return false;
-  }
-  
-  // Validate timestamp
-  if (typeof transaction.createdAt !== 'number' || transaction.createdAt > Date.now() + 60000) { // Allow 1 min future drift
-    return false;
-  }
-  
-  return true;
-};
-
-// Validate campaign data
-const validateCampaignData = (campaignData: any): boolean => {
-  if (!campaignData || !campaignData.title || !campaignData.description || !campaignData.creatorId || 
-      campaignData.totalWorkers === undefined || campaignData.rewardPerWorker === undefined || 
-      campaignData.totalBudget === undefined || campaignData.remainingBudget === undefined || 
-      campaignData.createdAt === undefined) {
-    return false;
-  }
-  
-  // Validate string fields
-  if (typeof campaignData.title !== 'string' || 
-      campaignData.title.length < 1 || campaignData.title.length > 100 ||
-      typeof campaignData.description !== 'string' ||
-      campaignData.description.length < 1 || campaignData.description.length > 1000) {
-    return false;
-  }
-  
-  // Validate numeric fields
-  if (typeof campaignData.totalWorkers !== 'number' || 
-      campaignData.totalWorkers <= 0 || campaignData.totalWorkers > 10000 ||
-      typeof campaignData.rewardPerWorker !== 'number' ||
-      campaignData.rewardPerWorker < 0.5 || campaignData.rewardPerWorker > 10000 ||
-      typeof campaignData.totalBudget !== 'number' ||
-      campaignData.totalBudget < 0 ||
-      typeof campaignData.remainingBudget !== 'number' ||
-      campaignData.remainingBudget < 0 ||
-      typeof campaignData.createdAt !== 'number') {
-    return false;
-  }
-  
-  // Validate budget consistency
-  if (campaignData.remainingBudget > campaignData.totalBudget) {
-    return false;
-  }
-  
-  return true;
-};
-
 // Atomic wallet operations using Firebase transactions
 export const updateWalletBalance = async (
   uid: string, 
   updateFn: (currentBalance: WalletBalance) => Partial<WalletBalance> | null,
   currentUserId?: string
 ): Promise<WalletBalance | null> => {
+  // Validate input parameters
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
+  if (!updateFn || typeof updateFn !== 'function') {
+    throw new Error('Invalid update function provided');
+  }
+  
   // Verify authorization if currentUserId is provided
   if (currentUserId && !(await verifyUserAuthorization(currentUserId, uid))) {
     throw new Error('Unauthorized: You can only update your own wallet balance');
@@ -332,6 +260,19 @@ export const createTransactionAndAdjustWallet = async (
   walletUpdate: Partial<WalletBalance>,
   currentUserId?: string
 ): Promise<void> => {
+  // Validate input parameters
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
+  if (!transaction || typeof transaction !== 'object') {
+    throw new Error('Invalid transaction data provided');
+  }
+  
+  if (!walletUpdate || typeof walletUpdate !== 'object') {
+    throw new Error('Invalid wallet update data provided');
+  }
+  
   // Verify authorization if currentUserId is provided
   if (currentUserId && !(await verifyUserAuthorization(currentUserId, uid))) {
     throw new Error('Unauthorized: You can only update your own wallet');
@@ -428,6 +369,19 @@ export const deductCampaignBudget = async (
   uid: string,
   currentUserId?: string
 ): Promise<boolean> => {
+  // Validate input parameters
+  if (!campaignId || typeof campaignId !== 'string') {
+    throw new Error('Invalid campaign ID provided');
+  }
+  
+  if (typeof amount !== 'number' || amount <= 0) {
+    throw new Error('Invalid amount provided');
+  }
+  
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
   // Verify authorization if currentUserId is provided
   if (currentUserId && !(await verifyUserAuthorization(currentUserId, uid))) {
     throw new Error('Unauthorized: You can only deduct from your own campaigns');
@@ -563,6 +517,23 @@ export const approveWorkAndCredit = async (
   reward: number,
   currentAdminId?: string
 ): Promise<boolean> => {
+  // Validate input parameters
+  if (!workId || typeof workId !== 'string') {
+    throw new Error('Invalid work ID provided');
+  }
+  
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
+  if (!campaignId || typeof campaignId !== 'string') {
+    throw new Error('Invalid campaign ID provided');
+  }
+  
+  if (typeof reward !== 'number' || reward < 0) {
+    throw new Error('Invalid reward amount provided');
+  }
+  
   // Verify admin authorization
   if (currentAdminId && !(await verifyUserAuthorization(currentAdminId, userId, 'admin'))) {
     throw new Error('Unauthorized: Only admins can approve work');
@@ -650,24 +621,6 @@ export const approveWorkAndCredit = async (
           }
         }
         
-        // Final validation after transaction
-        const finalWalletData = walletResult.snapshot.val();
-        if (!validateWalletData(finalWalletData)) {
-          console.error('Invalid wallet data returned from transaction:', finalWalletData);
-          // Rollback work status if wallet data is invalid
-          await update(workRef, { status: 'pending' });
-          // Rollback user profile update
-          const userSnap = await get(userRef);
-          if (userSnap.exists()) {
-            const userData = userSnap.val();
-            await update(userRef, {
-              earnedMoney: Math.max(0, (userData.earnedMoney || 0) - reward),
-              approvedWorks: Math.max(0, (userData.approvedWorks || 0) - 1)
-            });
-          }
-          throw new Error('Wallet validation failed after work approval');
-        }
-        
         // Invalidate cache
         dataCache.clear(`wallet:${userId}`);
         dataCache.clear(`works:${userId}`);
@@ -700,6 +653,27 @@ export const processMoneyRequest = async (
   status: 'approved' | 'rejected',
   currentAdminId?: string
 ): Promise<boolean> => {
+  // Validate input parameters
+  if (!requestId || typeof requestId !== 'string') {
+    throw new Error('Invalid request ID provided');
+  }
+  
+  if (!['add_money', 'withdrawal'].includes(type)) {
+    throw new Error('Invalid request type provided');
+  }
+  
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
+  if (typeof amount !== 'number' || amount <= 0) {
+    throw new Error('Invalid amount provided');
+  }
+  
+  if (!['approved', 'rejected'].includes(status)) {
+    throw new Error('Invalid status provided');
+  }
+  
   // Verify admin authorization
   if (currentAdminId && !(await verifyUserAuthorization(currentAdminId, userId, 'admin'))) {
     throw new Error('Unauthorized: Only admins can process money requests');
@@ -876,6 +850,23 @@ export const applyToCampaign = async (
   reward: number,
   currentUserId?: string
 ): Promise<boolean> => {
+  // Validate input parameters
+  if (!campaignId || typeof campaignId !== 'string') {
+    throw new Error('Invalid campaign ID provided');
+  }
+  
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
+  if (!userName || typeof userName !== 'string' || userName.trim().length === 0) {
+    throw new Error('Invalid user name provided');
+  }
+  
+  if (typeof reward !== 'number' || reward < 0) {
+    throw new Error('Invalid reward amount provided');
+  }
+  
   // Verify user authorization
   if (currentUserId && currentUserId !== userId) {
     throw new Error('Unauthorized: You can only apply to campaigns for yourself');
@@ -957,6 +948,19 @@ export const submitWorkForCampaign = async (
   proofUrl: string,
   currentUserId?: string
 ): Promise<boolean> => {
+  // Validate input parameters
+  if (!campaignId || typeof campaignId !== 'string') {
+    throw new Error('Invalid campaign ID provided');
+  }
+  
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
+  if (!proofUrl || typeof proofUrl !== 'string' || !proofUrl.startsWith('http')) {
+    throw new Error('Invalid proof URL provided');
+  }
+  
   // Verify user authorization
   if (currentUserId && currentUserId !== userId) {
     throw new Error('Unauthorized: You can only submit work for yourself');
@@ -1019,6 +1023,19 @@ export const rejectWorkAndRestoreCampaignBudget = async (
   campaignId: string,
   currentAdminId?: string
 ): Promise<boolean> => {
+  // Validate input parameters
+  if (!workId || typeof workId !== 'string') {
+    throw new Error('Invalid work ID provided');
+  }
+  
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
+  if (!campaignId || typeof campaignId !== 'string') {
+    throw new Error('Invalid campaign ID provided');
+  }
+  
   // Verify admin authorization
   if (currentAdminId && !(await verifyUserAuthorization(currentAdminId, userId, 'admin'))) {
     throw new Error('Unauthorized: Only admins can reject work');
@@ -1177,6 +1194,11 @@ export const fetchTimeBasedLeaderboard = async (
 
 // Utility functions for common data fetching operations
 export const fetchUserData = async (uid: string): Promise<any> => {
+  // Validate input parameter
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
   const cacheKey = `user:${uid}`;
   
   // Check cache first
@@ -1218,6 +1240,11 @@ export const fetchUserData = async (uid: string): Promise<any> => {
 };
 
 export const fetchWalletData = async (uid: string): Promise<any> => {
+  // Validate input parameter
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
   const cacheKey = `wallet:${uid}`;
   
   // Check cache first
@@ -1259,6 +1286,11 @@ export const fetchWalletData = async (uid: string): Promise<any> => {
 };
 
 export const fetchTransactions = async (uid: string): Promise<any> => {
+  // Validate input parameter
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
   const cacheKey = `transactions:${uid}`;
   
   // Check cache first
@@ -1341,6 +1373,11 @@ export const fetchCampaigns = async (): Promise<any> => {
 };
 
 export const fetchWorks = async (uid: string): Promise<any> => {
+  // Validate input parameter
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid user ID provided');
+  }
+  
   const cacheKey = `works:${uid}`;
   
   // Check cache first
@@ -1458,6 +1495,11 @@ export const clearUserCache = (uid: string): void => {
 
 // Utility function to fetch time-based leaderboard data
 export const fetchTimeBasedLeaderboard = async (timeframe: 'daily' | 'weekly' | 'monthly'): Promise<any[]> => {
+  // Validate input parameter
+  if (!timeframe || !['daily', 'weekly', 'monthly'].includes(timeframe)) {
+    throw new Error('Invalid timeframe provided. Must be daily, weekly, or monthly');
+  }
+  
   const cacheKey = `leaderboard:${timeframe}`;
   
   // Check cache first
@@ -1536,12 +1578,9 @@ export const fetchTimeBasedLeaderboard = async (timeframe: 'daily' | 'weekly' | 
       dataCache.set(cacheKey, sortedUsers);
       return sortedUsers;
     })
-    .catch((error: any) => {
+    .catch((error) => {
       console.error(`Error fetching ${timeframe} leaderboard:`, error);
-      if (error.code) {
-        throw new Error(`Failed to fetch ${timeframe} leaderboard: ${error.message}`);
-      }
-      throw new Error(`Failed to fetch ${timeframe} leaderboard. Please try again later.`);
+      throw error;
     })
     .finally(() => {
       dataCache.clearPending(cacheKey);

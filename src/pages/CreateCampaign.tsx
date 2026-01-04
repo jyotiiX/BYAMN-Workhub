@@ -182,7 +182,7 @@ const CreateCampaign = () => {
       });
 
       // Use atomic operation to deduct from wallet and update campaign budget
-      const success = await deductCampaignBudget(campaignRef.key, totalCost, profile.uid, profile.uid);
+      const success = await deductCampaignBudget(campaignRef.key!, totalCost, profile.uid, profile.uid);
       
       if (!success) {
         // If the atomic operation failed, remove the campaign
