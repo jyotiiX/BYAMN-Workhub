@@ -1479,7 +1479,8 @@ export const clearUserCache = (uid: string): void => {
 };
 
 // Utility function to fetch time-based leaderboard data
-export const fetchTimeBasedLeaderboard = async (timeframe: 'daily' | 'weekly' | 'monthly'): Promise<any[]> => {
+const fetchTimeBasedLeaderboardV2 = async (
+timeframe: 'daily' | 'weekly' | 'monthly'): Promise<any[]> => {
   // Validate input parameter
   if (!timeframe || !['daily', 'weekly', 'monthly'].includes(timeframe)) {
     throw new Error('Invalid timeframe provided. Must be daily, weekly, or monthly');
