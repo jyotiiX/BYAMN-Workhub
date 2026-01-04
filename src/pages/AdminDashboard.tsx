@@ -245,6 +245,12 @@ const AdminDashboard = () => {
 
     const handleWorkAction = async (work: WorkData, action: 'approve' | 'reject') => {
         try {
+            // Validate work data before processing
+            if (!work || !work.id || !work.userId || !work.campaignId || typeof work.reward !== 'number' || work.reward <= 0 || work.reward > 10000) {
+                toast({ title: "Invalid Work Data", description: "Work data is invalid or incomplete.", variant: "destructive" });
+                return;
+            }
+            
             if (action === 'approve') {
                 // Use atomic operation to approve work and credit user
                 const success = await approveWorkAndCredit(work.id, work.userId, work.campaignId, work.reward, profile?.uid);
@@ -273,6 +279,14 @@ const AdminDashboard = () => {
 
     const handleMoneyRequest = async (req: MoneyRequest, action: 'approve' | 'reject') => {
         try {
+            // Validate request data before processing
+            if (!req || !req.id || !req.userId || !req.type || typeof req.amount !== 'number' || req.amount <= 0 || 
+                (req.type === 'add_money' && (req.amount < 10 || req.amount > 100000)) ||
+                (req.type === 'withdrawal' && (req.amount < 500 || req.amount > 50000))) {
+                toast({ title: "Invalid Request Data", description: "Request data is invalid or incomplete.", variant: "destructive" });
+                return;
+            }
+            
             const status = action === 'approve' ? 'approved' : 'rejected';
             const success = await processMoneyRequest(req.id, req.type, req.userId, req.amount, status, profile?.uid);
             if (success) {

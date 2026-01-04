@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, IndianRupee, AlertTriangle } from 'lucide-react';
 import { deductCampaignBudget, fetchWalletData } from '@/lib/data-cache';
+import { sanitizeInput, isValidCampaignTitle, isValidCampaignDescription, isValidCampaignInstructions, isValidCampaignCategory } from '@/lib/utils';
 
 const CreateCampaign = () => {
   const { profile } = useAuth();
@@ -59,6 +60,48 @@ const CreateCampaign = () => {
     e.preventDefault();
     if (!profile?.uid) return;
 
+    // Sanitize and validate all inputs
+    const sanitizedTitle = sanitizeInput(form.title);
+    const sanitizedDescription = sanitizeInput(form.description);
+    const sanitizedInstructions = sanitizeInput(form.instructions);
+    
+    // Validate inputs
+    if (!isValidCampaignTitle(sanitizedTitle)) {
+      toast({ 
+        title: 'Invalid Title', 
+        description: 'Campaign title must be 3-100 characters long and not contain malicious content.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
+    if (!isValidCampaignDescription(sanitizedDescription)) {
+      toast({ 
+        title: 'Invalid Description', 
+        description: 'Campaign description must be 10-2000 characters long and not contain malicious content.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
+    if (!isValidCampaignInstructions(sanitizedInstructions)) {
+      toast({ 
+        title: 'Invalid Instructions', 
+        description: 'Campaign instructions must be 10-5000 characters long and not contain malicious content.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
+    if (!isValidCampaignCategory(form.category)) {
+      toast({ 
+        title: 'Invalid Category', 
+        description: 'Please select a valid campaign category.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
     // Additional validation
     const totalWorkers = parseInt(form.totalWorkers);
     const rewardPerWorker = parseFloat(form.rewardPerWorker);
@@ -123,9 +166,9 @@ const CreateCampaign = () => {
       // Create campaign
       const campaignRef = push(ref(database, 'campaigns'));
       await set(campaignRef, {
-        title: form.title,
-        description: form.description,
-        instructions: form.instructions,
+        title: sanitizedTitle,
+        description: sanitizedDescription,
+        instructions: sanitizedInstructions,
         category: form.category,
         totalWorkers: totalWorkers,
         completedWorkers: 0,

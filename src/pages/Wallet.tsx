@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -23,26 +24,19 @@ import {
   Plus, 
   ArrowUpRight,
   IndianRupee,
+  Clock,
+  CheckCircle2,
+  XCircle,
   TrendingUp,
   History,
   AlertTriangle,
-  Loader2,
-  BarChart3,
-  PieChart,
-  TrendingDown,
-  ArrowDown,
-  ArrowUp,
-  Filter,
-  Settings as SettingsIcon,
-  Download
+  Loader2
 } from 'lucide-react';
 import { z } from 'zod';
 import { 
-  fetchWalletData, 
-  fetchTransactions,
-  invalidateUserCache,
-  dataCache,
-  createTransactionAndAdjustWallet
+  createTransactionAndAdjustWallet,
+  fetchWalletData,
+  fetchTransactions
 } from '@/lib/data-cache';
 
 interface WalletData {
@@ -82,7 +76,6 @@ const Wallet = () => {
   const [addMoneyOpen, setAddMoneyOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [addMoneyForm, setAddMoneyForm] = useState({
     amount: '',
@@ -96,19 +89,29 @@ const Wallet = () => {
 
   useEffect(() => {
     const fetchWalletAndTransactions = async () => {
-      if (!profile?.uid) return;
+      if (!profile?.uid) {
+        setError('User not authenticated. Please log in to access your wallet.');
+        setLoading(false);
+        return;
+      }
 
       try {
         setLoading(true);
-        setError(null);
 
-        // Fetch wallet data
+        // Fetch wallet data using the data cache
         const walletData = await fetchWalletData(profile.uid);
         if (walletData) {
           setWallet(walletData);
+        } else {
+          setWallet({
+            earnedBalance: 0,
+            addedBalance: 0,
+            pendingAddMoney: 0,
+            totalWithdrawn: 0
+          });
         }
 
-        // Fetch transactions
+        // Fetch transactions using the data cache
         const transactionsData = await fetchTransactions(profile.uid);
         if (transactionsData) {
           const transArray: Transaction[] = Object.entries(transactionsData)
@@ -116,12 +119,18 @@ const Wallet = () => {
               id,
               ...trans,
             }))
+            .filter((trans): trans is Transaction => {
+              // Filter out invalid transactions
+              return trans && trans.type && trans.amount !== undefined && trans.createdAt !== undefined;
+            })
             .sort((a, b) => b.createdAt - a.createdAt);
           setTransactions(transArray);
+        } else {
+          setTransactions([]);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching wallet:', error);
-        setError('Failed to load wallet data. Please try again later.');
+        setError(error.message || 'Failed to load wallet data. Please try again later.');
         // Set default values
         setWallet({
           earnedBalance: 0,
@@ -129,17 +138,23 @@ const Wallet = () => {
           pendingAddMoney: 0,
           totalWithdrawn: 0
         });
-        setTransactions([]);
       } finally {
         setLoading(false);
       }
     };
 
     fetchWalletAndTransactions();
-  }, [profile?.uid]);
+  }, [profile?.uid, toast]);
 
   const handleAddMoney = async () => {
-    if (!profile?.uid) return;
+    if (!profile?.uid) {
+      toast({
+        title: 'Authentication Error',
+        description: 'You must be logged in to add money.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const amount = parseFloat(addMoneyForm.amount);
     const result = addMoneySchema.safeParse({
@@ -165,6 +180,16 @@ const Wallet = () => {
       });
       return;
     }
+    
+    // Additional validation to prevent excessive amounts
+    if (amount > 100000) {
+      toast({
+        title: 'Amount Exceeds Limit',
+        description: 'Maximum amount per request is ₹100,000.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -176,9 +201,9 @@ const Wallet = () => {
         const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
         
         let recentAddMoneyCount = 0;
-        for (const trans of Object.values(recentTrans)) {
+        for (const trans of Object.values(recentTrans || {})) {
           const transaction = trans as Transaction;
-          if (transaction.type === 'add_money' && transaction.createdAt > oneHourAgo) {
+          if (transaction.type === 'add_money' && transaction.createdAt && transaction.createdAt > oneHourAgo) {
             recentAddMoneyCount++;
           }
         }
@@ -204,8 +229,13 @@ const Wallet = () => {
         upiTransactionId: addMoneyForm.upiTransactionId,
         createdAt: Date.now(),
       };
+      
+      // Validate transaction before creating
+      if (typeof transaction.amount !== 'number' || transaction.amount <= 0 || transaction.amount > 100000) {
+        throw new Error('Invalid transaction amount');
+      }
 
-      // Update wallet to reflect pending add money
+      // Update wallet to reflect pending add money using atomic operation
       await createTransactionAndAdjustWallet(profile.uid, transaction, {
         pendingAddMoney: amount
       }, profile.uid);
@@ -231,7 +261,7 @@ const Wallet = () => {
       setAddMoneyOpen(false);
       setAddMoneyForm({ amount: '', upiTransactionId: '' });
       
-      // Refetch data
+      // Refresh data using the data cache
       const updatedWallet = await fetchWalletData(profile.uid);
       if (updatedWallet) {
         setWallet(updatedWallet);
@@ -244,14 +274,18 @@ const Wallet = () => {
             id,
             ...trans,
           }))
+          .filter((trans): trans is Transaction => {
+            // Filter out invalid transactions
+            return trans && trans.type && trans.amount !== undefined && trans.createdAt !== undefined;
+          })
           .sort((a, b) => b.createdAt - a.createdAt);
         setTransactions(transArray);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding money:', error);
       toast({
         title: 'Error',
-        description: 'Failed to submit request. Please try again.',
+        description: error.message || 'Failed to submit request. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -260,7 +294,23 @@ const Wallet = () => {
   };
 
   const handleWithdraw = async () => {
-    if (!profile?.uid || !wallet) return;
+    if (!profile?.uid) {
+      toast({
+        title: 'Authentication Error',
+        description: 'You must be logged in to withdraw money.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (!wallet) {
+      toast({
+        title: 'Wallet Error',
+        description: 'Wallet data not loaded. Please refresh the page.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const amount = parseFloat(withdrawForm.amount);
     const result = withdrawSchema.safeParse({
@@ -295,6 +345,16 @@ const Wallet = () => {
       });
       return;
     }
+    
+    // Additional validation to prevent excessive withdrawals
+    if (amount > 50000) {
+      toast({
+        title: 'Amount Exceeds Limit',
+        description: 'Maximum withdrawal per request is ₹50,000.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -306,9 +366,9 @@ const Wallet = () => {
         const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
         
         let recentWithdrawCount = 0;
-        for (const trans of Object.values(recentTrans)) {
+        for (const trans of Object.values(recentTrans || {})) {
           const transaction = trans as Transaction;
-          if (transaction.type === 'withdrawal' && transaction.createdAt > oneHourAgo) {
+          if (transaction.type === 'withdrawal' && transaction.createdAt && transaction.createdAt > oneHourAgo) {
             recentWithdrawCount++;
           }
         }
@@ -334,6 +394,11 @@ const Wallet = () => {
         upiId: withdrawForm.upiId,
         createdAt: Date.now(),
       };
+      
+      // Validate transaction before creating
+      if (typeof transaction.amount !== 'number' || transaction.amount <= 0 || transaction.amount > 50000) {
+        throw new Error('Invalid transaction amount');
+      }
 
       await createTransactionAndAdjustWallet(profile.uid, transaction, {
         earnedBalance: -amount // Deduct from earned balance
@@ -360,7 +425,7 @@ const Wallet = () => {
       setWithdrawOpen(false);
       setWithdrawForm({ amount: '', upiId: '' });
       
-      // Refetch data
+      // Refresh data using the data cache
       const updatedWallet = await fetchWalletData(profile.uid);
       if (updatedWallet) {
         setWallet(updatedWallet);
@@ -373,14 +438,18 @@ const Wallet = () => {
             id,
             ...trans,
           }))
+          .filter((trans): trans is Transaction => {
+            // Filter out invalid transactions
+            return trans && trans.type && trans.amount !== undefined && trans.createdAt !== undefined;
+          })
           .sort((a, b) => b.createdAt - a.createdAt);
         setTransactions(transArray);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error withdrawing:', error);
       toast({
         title: 'Error',
-        description: 'Failed to submit request. Please try again.',
+        description: error.message || 'Failed to submit request. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -398,7 +467,7 @@ const Wallet = () => {
       case 'rejected':
         return <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">Rejected</Badge>;
       default:
-        return null;
+        return <Badge variant="outline" className="bg-muted text-muted-foreground">Unknown</Badge>;
     }
   };
 
@@ -420,9 +489,24 @@ const Wallet = () => {
   const totalBalance = (wallet?.earnedBalance || 0) + (wallet?.addedBalance || 0);
 
   const transactionStats = {
-    earnings: transactions.filter(t => t.type === 'earning').reduce((sum, t) => sum + t.amount, 0),
-    withdrawals: transactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + t.amount, 0),
-    added: transactions.filter(t => t.type === 'add_money').reduce((sum, t) => sum + t.amount, 0),
+    earnings: transactions.filter(t => t.type === 'earning').reduce((sum, t) => {
+      if (typeof t.amount === 'number' && t.status === 'approved') {
+        return sum + t.amount;
+      }
+      return sum;
+    }, 0),
+    withdrawals: transactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => {
+      if (typeof t.amount === 'number' && t.status === 'approved') {
+        return sum + t.amount;
+      }
+      return sum;
+    }, 0),
+    added: transactions.filter(t => t.type === 'add_money').reduce((sum, t) => {
+      if (typeof t.amount === 'number' && t.status === 'approved') {
+        return sum + t.amount;
+      }
+      return sum;
+    }, 0),
   };
 
   if (loading && !profile) {
@@ -441,52 +525,32 @@ const Wallet = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-muted">
+    <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
       
       <main className="flex-1 container mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="font-display text-4xl font-bold text-foreground">
-              My Wallet
-            </h1>
-            <p className="text-muted-foreground">Manage your funds and transactions</p>
-          </div>
-          <div className="flex gap-3">
-            <Button variant="outline" size="sm">
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </Button>
-            <Button variant="outline" size="sm">
-              <SettingsIcon className="h-4 w-4 mr-2" />
-              Settings
-            </Button>
-          </div>
-        </div>
+        <h1 className="font-display text-3xl font-bold text-foreground mb-8">
+          My Wallet
+        </h1>
 
         {/* Balance Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-            <div className="h-2 bg-gradient-to-r from-primary to-accent"></div>
+        <div className="grid md:grid-cols-3 gap-4 mb-8">
+          <Card className="bg-gradient-primary text-primary-foreground">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Total Balance</p>
-                  <p className="font-display text-3xl font-bold text-foreground flex items-center">
+                  <p className="text-sm text-primary-foreground/80 mb-1">Total Balance</p>
+                  <p className="font-display text-3xl font-bold flex items-center">
                     <IndianRupee className="h-6 w-6" />
                     {totalBalance.toFixed(2)}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Available for use</p>
                 </div>
-                <div className="p-3 rounded-lg bg-gradient-to-r from-primary to-accent flex items-center justify-center">
-                  <WalletIcon className="h-6 w-6 text-white" />
-                </div>
+                <WalletIcon className="h-8 w-8 text-primary-foreground/50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-            <div className="h-2 bg-gradient-to-r from-success to-emerald-500"></div>
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -497,15 +561,12 @@ const Wallet = () => {
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">Available for withdrawal</p>
                 </div>
-                <div className="p-3 rounded-lg bg-gradient-to-r from-success to-emerald-500 flex items-center justify-center">
-                  <TrendingUp className="h-6 w-6 text-white" />
-                </div>
+                <TrendingUp className="h-6 w-6 text-success/50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-            <div className="h-2 bg-gradient-to-r from-blue-500 to-cyan-500"></div>
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -516,28 +577,7 @@ const Wallet = () => {
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">For creating campaigns</p>
                 </div>
-                <div className="p-3 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center">
-                  <Plus className="h-6 w-6 text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-            <div className="h-2 bg-gradient-to-r from-purple-500 to-indigo-500"></div>
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Total Withdrawn</p>
-                  <p className="font-display text-2xl font-bold text-purple-500 flex items-center">
-                    <IndianRupee className="h-5 w-5" />
-                    {(wallet?.totalWithdrawn || 0).toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">Money withdrawn</p>
-                </div>
-                <div className="p-3 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 flex items-center justify-center">
-                  <ArrowUpRight className="h-6 w-6 text-white" />
-                </div>
+                <Plus className="h-6 w-6 text-primary/50" />
               </div>
             </CardContent>
           </Card>
@@ -547,8 +587,8 @@ const Wallet = () => {
         <div className="flex flex-wrap gap-4 mb-8">
           <Dialog open={addMoneyOpen} onOpenChange={setAddMoneyOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2 px-6 py-6 text-lg">
-                <Plus className="h-5 w-5" />
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
                 Add Money
               </Button>
             </DialogTrigger>
@@ -596,8 +636,8 @@ const Wallet = () => {
 
           <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2 px-6 py-6 text-lg">
-                <ArrowUpRight className="h-5 w-5" />
+              <Button variant="outline" className="gap-2">
+                <ArrowUpRight className="h-4 w-4" />
                 Withdraw
               </Button>
             </DialogTrigger>
@@ -656,101 +696,28 @@ const Wallet = () => {
           </Dialog>
         </div>
 
-        {/* Transaction Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-success/10">
-                  <TrendingUp className="h-6 w-6 text-success" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Earnings</p>
-                  <p className="font-display text-xl font-bold text-success">
-                    <IndianRupee className="h-4 w-4 inline" />
-                    {transactionStats.earnings.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-destructive/10">
-                  <ArrowUpRight className="h-6 w-6 text-destructive" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Withdrawn</p>
-                  <p className="font-display text-xl font-bold text-destructive">
-                    <IndianRupee className="h-4 w-4 inline" />
-                    {transactionStats.withdrawals.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-primary/10">
-                  <Plus className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Added</p>
-                  <p className="font-display text-xl font-bold text-primary">
-                    <IndianRupee className="h-4 w-4 inline" />
-                    {transactionStats.added.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         {/* Transaction History */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <History className="h-5 w-5" />
               Transaction History
             </CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm">
-                <Filter className="h-4 w-4 mr-2" />
-                Filter
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-            </div>
           </CardHeader>
           <CardContent>
-            {error && (
-              <div className="text-center py-12">
-                <History className="h-16 w-16 text-destructive/30 mx-auto mb-4" />
-                <p className="text-destructive text-lg mb-2">Error Loading Transactions</p>
-                <p className="text-muted-foreground mb-4">{error}</p>
-                <Button onClick={() => window.location.reload()}>Retry</Button>
-              </div>
-            )}
-            {!error && transactions.length === 0 ? (
-              <div className="text-center py-12">
-                <History className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
-                <p className="text-lg text-muted-foreground mb-2">No transactions yet</p>
-                <p className="text-muted-foreground">Your transaction history will appear here</p>
+            {transactions.length === 0 ? (
+              <div className="text-center py-8">
+                <History className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground">No transactions yet</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {transactions.map((trans) => (
                   <div
                     key={trans.id}
-                    className="flex items-center gap-4 p-4 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors"
+                    className="flex items-center gap-4 p-4 rounded-lg bg-muted/50"
                   >
-                    <div className="h-12 w-12 rounded-lg bg-background flex items-center justify-center">
+                    <div className="h-10 w-10 rounded-lg bg-background flex items-center justify-center">
                       {getTransactionIcon(trans.type)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -764,7 +731,7 @@ const Wallet = () => {
                         trans.type === 'earning' ? 'text-success' : 
                         trans.type === 'withdrawal' ? 'text-destructive' : 'text-foreground'
                       }`}>
-                        {trans.type === 'earning' ? '+' : trans.type === 'withdrawal' ? '-' : ''} 
+                        {trans.type === 'earning' ? '+' : trans.type === 'withdrawal' ? '-' : ''}
                         <IndianRupee className="h-3 w-3" />
                         {trans.amount.toFixed(2)}
                       </p>

@@ -31,6 +31,19 @@ const Auth = () => {
   const navigate = useNavigate();
   const { signIn, signUp, resetPassword, user } = useAuth();
   const { toast } = useToast();
+  
+  // Check for session expiration message
+  useEffect(() => {
+    const isSessionExpired = localStorage.getItem('sessionExpired');
+    if (isSessionExpired === 'true') {
+      toast({
+        title: 'Session Expired',
+        description: 'Your session has expired due to inactivity. Please log in again.',
+        variant: 'destructive',
+      });
+      localStorage.removeItem('sessionExpired'); // Remove the flag after showing the message
+    }
+  }, [toast]);
 
   const [isLogin, setIsLogin] = useState(mode !== 'register');
   const [showPassword, setShowPassword] = useState(false);
@@ -126,22 +139,38 @@ const Auth = () => {
       
       let errorMessage = 'Something went wrong. Please try again.';
       
-      // Provide generic error messages to prevent information disclosure
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        // Don't distinguish between user not found vs wrong password
-        errorMessage = 'Invalid email or password.';
-      } else if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'An account with this email already exists.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password is too weak. Please use at least 6 characters.';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many attempts. Please try again later.';
-      } else {
-        // Log the specific error for debugging but show generic message to user
-        console.warn('Unexpected auth error:', error.code);
-        errorMessage = 'Authentication failed. Please try again.';
+      // Handle specific error types from the AuthContext
+      if (error.message) {
+        // Use the error message from AuthContext validation
+        errorMessage = error.message;
+      } else if (error.code) {
+        // Handle Firebase error codes
+        switch (error.code) {
+          case 'auth/user-not-found':
+          case 'auth/wrong-password':
+            // Don't distinguish between user not found vs wrong password
+            errorMessage = 'Invalid email or password.';
+            break;
+          case 'auth/email-already-in-use':
+            errorMessage = 'An account with this email already exists.';
+            break;
+          case 'auth/invalid-email':
+            errorMessage = 'Please enter a valid email address.';
+            break;
+          case 'auth/weak-password':
+            errorMessage = 'Password is too weak. Please use at least 6 characters.';
+            break;
+          case 'auth/too-many-requests':
+            errorMessage = 'Too many attempts. Please try again later.';
+            break;
+          case 'auth/network-request-failed':
+            errorMessage = 'Network error. Please check your connection.';
+            break;
+          default:
+            // Log the specific error for debugging but show generic message to user
+            console.warn('Unexpected auth error:', error.code);
+            errorMessage = 'Authentication failed. Please try again.';
+        }
       }
       
       toast({
