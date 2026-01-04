@@ -113,15 +113,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sessionStorage.clear();
   };
 
-  const fetchProfile = async (uid: string) => {
-    const snapshot = await get(child(ref(database), `users/${uid}`));
-    if (snapshot.exists()) {
-      setProfile(snapshot.val());
+  const fetchProfile = async (uid: string): Promise<UserProfile | null> => {
+    try {
+      const profileData = await fetchUserData(uid);
+      if (profileData) {
+        // Validate the fetched profile data
+        if (validateUserProfile(profileData).isValid) {
+          setProfile(profileData);
+          return profileData;
+        } else {
+          console.error('Invalid profile data received:', validateUserProfile(profileData).errors);
+          return null;
+        }
+      }
+      return null;
+    } catch (error: any) {
+      console.error('Error fetching profile:', error);
+      // Optionally set an error state here
+      return null;
     }
     return snapshot.val();
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = async (): Promise<void> => {
     if (user) {
       await fetchProfile(user.uid);
     }
@@ -140,19 +154,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('touchstart', handleUserActivity);
     
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
-        await fetchProfile(user.uid);
-        // Start session timeout tracking
-        resetSessionTimeout();
-      } else {
-        setProfile(null);
-        // Clear timeout when user logs out
-        if (sessionTimeoutRef.current) {
-          clearTimeout(sessionTimeoutRef.current);
+      try {
+        setUser(user);
+        if (user) {
+          await fetchProfile(user.uid);
+        } else {
+          setProfile(null);
         }
+      } catch (error) {
+        console.error('Error in auth state change:', error);
+        setProfile(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     // Clean up event listeners and timeout
@@ -168,14 +182,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, fullName: string): Promise<void> => {
     // Validate inputs before creating user
     if (!isValidEmail(email)) {
       throw new Error('Please enter a valid email address');
     }
     
     if (!isValidPassword(password)) {
-      throw new Error('Password must be at least 6 characters and contain at least one letter and one number');
+      throw new Error('Password must be at least 8 characters and contain at least one uppercase, one lowercase, one number and one special character');
     }
     
     if (!isValidName(fullName)) {
@@ -193,71 +207,113 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    const { user } = await createUserWithEmailAndPassword(auth, email, password);
-    await sendEmailVerification(user);
-    
-    const newProfile: UserProfile = {
-      uid: user.uid,
-      email: email,
-      fullName: sanitizeInput(fullName),
-      bio: '',
-      socialLinks: {},
-      profileImage: undefined,
-      role: 'user',
-      isBlocked: false,
-      createdAt: Date.now(),
-      earnedMoney: 0,
-      addedMoney: 0,
-      approvedWorks: 0,
-      totalWithdrawn: 0,
-    };
-    
-    await set(ref(database, `users/${user.uid}`), newProfile);
-    
-    // Initialize wallet
-    await set(ref(database, `wallets/${user.uid}`), {
-      earnedBalance: 0,
-      addedBalance: 0,
-      pendingAddMoney: 0,
-      totalWithdrawn: 0,
-    });
-    
-    // Set profile in cache
-    dataCache.set(`user:${user.uid}`, newProfile);
-    
-    setProfile(newProfile);
+    try {
+      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(user);
+      
+      const newProfile: UserProfile = {
+        uid: user.uid,
+        email: email,
+        fullName: sanitizeInput(fullName),
+        bio: '',
+        socialLinks: {},
+        role: 'user',
+        isBlocked: false,
+        createdAt: Date.now(),
+        earnedMoney: 0,
+        addedMoney: 0,
+        approvedWorks: 0,
+        totalWithdrawn: 0,
+      };
+      
+      await set(ref(database, `users/${user.uid}`), newProfile);
+      
+      // Initialize wallet
+      await set(ref(database, `wallets/${user.uid}`), {
+        earnedBalance: 0,
+        addedBalance: 0,
+        pendingAddMoney: 0,
+        totalWithdrawn: 0,
+      });
+      
+      // Set profile in cache
+      dataCache.set(`user:${user.uid}`, newProfile);
+      
+      setProfile(newProfile);
+    } catch (error: any) {
+      console.error('Error during sign up:', error);
+      // Clean up in case of error
+      if (error.code === 'auth/email-already-in-use') {
+        throw new Error('Email already in use. Please use a different email address.');
+      } else {
+        throw new Error('Failed to create account. Please try again later.');
+      }
+    }
   };
 
-  const signIn = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
-  };
-
-  const logout = async () => {
-    if (sessionTimeoutRef.current) {
-      clearTimeout(sessionTimeoutRef.current);
+  const signIn = async (email: string, password: string): Promise<void> => {
+    // Validate inputs before signing in
+    if (!isValidEmail(email)) {
+      throw new Error('Please enter a valid email address');
     }
     
-    // Sign out from Firebase
-    await signOut(auth);
+    if (!password || password.length < 1) {
+      throw new Error('Password cannot be empty');
+    }
     
-    // Clear local state
-    setUser(null);
-    setProfile(null);
-    
-    // Clear all cached data
-    dataCache.clearAll();
-    
-    // Clear any stored session data
-    localStorage.clear();
-    sessionStorage.clear();
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      console.error('Error during sign in:', error);
+      if (error.code === 'auth/user-not-found') {
+        throw new Error('No account found with this email. Please check your email or sign up for a new account.');
+      } else if (error.code === 'auth/wrong-password') {
+        throw new Error('Incorrect password. Please try again.');
+      } else if (error.code === 'auth/too-many-requests') {
+        throw new Error('Too many failed login attempts. Please try again later.');
+      } else {
+        throw new Error('Failed to sign in. Please check your credentials and try again.');
+      }
+    }
   };
 
-  const resetPassword = async (email: string) => {
-    await sendPasswordResetEmail(auth, email);
+  const logout = async (): Promise<void> => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error during logout:', error);
+    } finally {
+      setUser(null);
+      setProfile(null);
+      
+      // Clear user cache
+      if (user) {
+        clearUserCache(user.uid);
+      }
+    }
   };
 
-  const updateProfile = async (data: Partial<UserProfile>) => {
-    if (!user) return;
+  const resetPassword = async (email: string): Promise<void> => {
+    if (!isValidEmail(email)) {
+      throw new Error('Please enter a valid email address');
+    }
+    
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error: any) {
+      console.error('Error during password reset:', error);
+      if (error.code === 'auth/user-not-found') {
+        throw new Error('No account found with this email address.');
+      } else {
+        throw new Error('Failed to send password reset email. Please try again later.');
+      }
+    }
+  };
+
+  const updateProfile = async (data: Partial<UserProfile>): Promise<void> => {
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
     
     // Sanitize profile data to prevent XSS and injection attacks
     const sanitizedData: Partial<UserProfile> = {};
@@ -278,90 +334,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     
-    if (data.profileImage) {
-      // Validate URL before saving
-      if (isValidUrl(data.profileImage)) {
-        sanitizedData.profileImage = data.profileImage;
-      } else {
-        throw new Error('Invalid profile image URL');
-      }
-    }
-    
-    if (data.socialLinks) {
-      sanitizedData.socialLinks = {};
+    try {
+      await update(ref(database, `users/${user.uid}`), sanitizedData);
       
-      if (data.socialLinks.linkedin && isValidUrl(data.socialLinks.linkedin)) {
-        sanitizedData.socialLinks.linkedin = data.socialLinks.linkedin;
-      } else if (data.socialLinks.linkedin) {
-        throw new Error('Invalid LinkedIn URL');
-      }
-      if (data.socialLinks.twitter && isValidUrl(data.socialLinks.twitter)) {
-        sanitizedData.socialLinks.twitter = data.socialLinks.twitter;
-      } else if (data.socialLinks.twitter) {
-        throw new Error('Invalid Twitter URL');
-      }
-      if (data.socialLinks.instagram && isValidUrl(data.socialLinks.instagram)) {
-        sanitizedData.socialLinks.instagram = data.socialLinks.instagram;
-      } else if (data.socialLinks.instagram) {
-        throw new Error('Invalid Instagram URL');
-      }
-      if (data.socialLinks.youtube && isValidUrl(data.socialLinks.youtube)) {
-        sanitizedData.socialLinks.youtube = data.socialLinks.youtube;
-      } else if (data.socialLinks.youtube) {
-        throw new Error('Invalid YouTube URL');
-      }
-      if (data.socialLinks.other && isValidUrl(data.socialLinks.other)) {
-        sanitizedData.socialLinks.other = data.socialLinks.other;
-      } else if (data.socialLinks.other) {
-        throw new Error('Invalid Other URL');
-      }
+      // Invalidate and update cache
+      invalidateUserCache(user.uid);
+      await fetchProfile(user.uid);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      throw new Error('Failed to update profile. Please try again later.');
     }
-=======
-    // Sanitize profile data to prevent XSS and injection attacks
-    const sanitizedData: Partial<UserProfile> = {};
-    
-    if (data.fullName) {
-      sanitizedData.fullName = sanitizeInput(data.fullName);
-    }
-    
-    if (data.bio) {
-      sanitizedData.bio = sanitizeInput(data.bio);
-    }
-    
-    // Ensure we don't update sensitive fields
-    const allowedFields = ['fullName', 'bio', 'profileImage', 'socialLinks'];
-    const filteredData: Partial<UserProfile> = {};
-    
-    for (const field of allowedFields) {
-      if (sanitizedData[field] !== undefined) {
-        filteredData[field] = sanitizedData[field];
-      }
-    }
-    
-    await update(ref(database, `users/${user.uid}`), filteredData);
-    
-    if (data.socialLinks) {
-      sanitizedData.socialLinks = {};
-      
-      if (data.socialLinks.linkedin && isValidUrl(data.socialLinks.linkedin)) {
-        sanitizedData.socialLinks.linkedin = data.socialLinks.linkedin;
-      }
-      if (data.socialLinks.twitter && isValidUrl(data.socialLinks.twitter)) {
-        sanitizedData.socialLinks.twitter = data.socialLinks.twitter;
-      }
-      if (data.socialLinks.instagram && isValidUrl(data.socialLinks.instagram)) {
-        sanitizedData.socialLinks.instagram = data.socialLinks.instagram;
-      }
-      if (data.socialLinks.youtube && isValidUrl(data.socialLinks.youtube)) {
-        sanitizedData.socialLinks.youtube = data.socialLinks.youtube;
-      }
-      if (data.socialLinks.other && isValidUrl(data.socialLinks.other)) {
-        sanitizedData.socialLinks.other = data.socialLinks.other;
-      }
-    }
-    
-    await update(ref(database, `users/${user.uid}`), sanitizedData);
-    await fetchProfile(user.uid);
   };
 
   const value = {
