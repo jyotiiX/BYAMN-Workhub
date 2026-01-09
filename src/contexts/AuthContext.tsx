@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { ref, set, get, child, update } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
-import { sanitizeInput, isValidUrl, isValidEmail, isValidPassword, isValidName } from '@/lib/utils';
+import { sanitizeInput, isValidUrl, isValidEmail, isValidPassword, isValidName, validateUserProfile } from '@/lib/utils';
 import { dataCache } from '@/lib/data-cache';
 
 interface UserProfile {
@@ -115,14 +115,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchProfile = async (uid: string): Promise<UserProfile | null> => {
     try {
-      const profileData = await fetchUserData(uid);
-      if (profileData) {
+      const snapshot = await get(ref(database, `users/${uid}`));
+      if (snapshot.exists()) {
+        const profileData = snapshot.val();
         // Validate the fetched profile data
-        if (validateUserProfile(profileData).isValid) {
+        const validation = validateUserProfile(profileData);
+        if (validation.isValid) {
           setProfile(profileData);
           return profileData;
         } else {
-          console.error('Invalid profile data received:', validateUserProfile(profileData).errors);
+          console.error('Invalid profile data received:', validation.errors);
           return null;
         }
       }
@@ -132,7 +134,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Optionally set an error state here
       return null;
     }
-    return snapshot.val();
   };
 
   const refreshProfile = async (): Promise<void> => {
