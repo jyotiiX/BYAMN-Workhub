@@ -30,7 +30,10 @@ import {
   TrendingUp,
   History,
   AlertTriangle,
-  Loader2
+  Loader2,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { z } from 'zod';
 import { 
@@ -78,6 +81,8 @@ const Wallet = () => {
   const [addMoneyOpen, setAddMoneyOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const [addMoneyForm, setAddMoneyForm] = useState({
     amount: '',
@@ -147,6 +152,22 @@ const Wallet = () => {
 
     fetchWalletAndTransactions();
   }, [profile?.uid, toast]);
+
+  // Sort transactions
+  useEffect(() => {
+    setTransactions(prev => [...prev].sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'date':
+          comparison = a.createdAt - b.createdAt;
+          break;
+        case 'amount':
+          comparison = a.amount - b.amount;
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    }));
+  }, [sortBy, sortOrder]);
 
   const handleAddMoney = async () => {
     if (!profile?.uid) {
@@ -696,10 +717,46 @@ const Wallet = () => {
         {/* Transaction History */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="h-5 w-5" />
-              Transaction History
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Transaction History
+              </CardTitle>
+              <div className="flex gap-2">
+                <Button
+                  variant={sortBy === 'date' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    if (sortBy === 'date') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortBy('date');
+                      setSortOrder('desc');
+                    }
+                  }}
+                  className="gap-1"
+                >
+                  Date
+                  {sortBy === 'date' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+                </Button>
+                <Button
+                  variant={sortBy === 'amount' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    if (sortBy === 'amount') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortBy('amount');
+                      setSortOrder('desc');
+                    }
+                  }}
+                  className="gap-1"
+                >
+                  Amount
+                  {sortBy === 'amount' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {transactions.length === 0 ? (

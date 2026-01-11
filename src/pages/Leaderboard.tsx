@@ -12,7 +12,10 @@ import {
   Medal, 
   User,
   TrendingUp,
-  ExternalLink
+  ExternalLink,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchTimeBasedLeaderboard } from '@/lib/data-cache';
@@ -25,11 +28,85 @@ interface LeaderboardUser {
   rank?: number;
 }
 
+const LeaderboardList = ({ leaders, sortBy, sortOrder, getRankIcon, getRankBgClass }: { 
+  leaders: LeaderboardUser[], 
+  sortBy: 'rank' | 'earnings', 
+  sortOrder: 'asc' | 'desc',
+  getRankIcon: (rank: number) => JSX.Element,
+  getRankBgClass: (rank: number) => string
+}) => {
+  const sorted = [...leaders].sort((a, b) => {
+    let comparison = 0;
+    switch (sortBy) {
+      case 'rank':
+        comparison = (a.rank || 0) - (b.rank || 0);
+        break;
+      case 'earnings':
+        comparison = a.approvedWorks - b.approvedWorks;
+        break;
+    }
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+  // Reassign ranks
+  sorted.forEach((user, index) => {
+    user.rank = index + 1;
+  });
+  return (
+    <div className="space-y-3">
+      {sorted.length === 0 ? (
+        <div className="text-center py-12">
+          <Trophy className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+          <p className="text-muted-foreground">No rankings yet</p>
+        </div>
+      ) : (
+        sorted.map((user) => (
+          <div
+            key={user.uid}
+            className={`flex items-center gap-4 p-4 rounded-xl border transition-all hover:shadow-md ${getRankBgClass(user.rank || 0)}`}
+          >
+            <div className="w-10 flex justify-center">
+              {getRankIcon(user.rank || 0)}
+            </div>
+            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+              {user.profileImage ? (
+                <img 
+                  src={user.profileImage} 
+                  alt={user.fullName}
+                  className="h-12 w-12 object-cover"
+                />
+              ) : (
+                <User className="h-6 w-6 text-primary" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-foreground truncate">
+                {user.fullName}
+              </p>
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <TrendingUp className="h-3 w-3" />
+                <span>{user.approvedWorks} approved works</span>
+              </div>
+            </div>
+            <Link to={`/profile/${user.uid}`}>
+              <Button variant="ghost" size="sm" className="gap-1">
+                Profile
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </Link>
+          </div>
+        ))
+      )}
+    </div>
+  );
+};
+
 const Leaderboard = () => {
   const [dailyLeaders, setDailyLeaders] = useState<LeaderboardUser[]>([]);
   const [weeklyLeaders, setWeeklyLeaders] = useState<LeaderboardUser[]>([]);
   const [monthlyLeaders, setMonthlyLeaders] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<'rank' | 'earnings'>('rank');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
@@ -80,54 +157,6 @@ const Leaderboard = () => {
     }
   };
 
-  const LeaderboardList = ({ leaders }: { leaders: LeaderboardUser[] }) => (
-    <div className="space-y-3">
-      {leaders.length === 0 ? (
-        <div className="text-center py-12">
-          <Trophy className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
-          <p className="text-muted-foreground">No rankings yet</p>
-        </div>
-      ) : (
-        leaders.map((user) => (
-          <div
-            key={user.uid}
-            className={`flex items-center gap-4 p-4 rounded-xl border transition-all hover:shadow-md ${getRankBgClass(user.rank || 0)}`}
-          >
-            <div className="w-10 flex justify-center">
-              {getRankIcon(user.rank || 0)}
-            </div>
-            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
-              {user.profileImage ? (
-                <img 
-                  src={user.profileImage} 
-                  alt={user.fullName}
-                  className="h-12 w-12 object-cover"
-                />
-              ) : (
-                <User className="h-6 w-6 text-primary" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-foreground truncate">
-                {user.fullName}
-              </p>
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <TrendingUp className="h-3 w-3" />
-                <span>{user.approvedWorks} approved works</span>
-              </div>
-            </div>
-            <Link to={`/profile/${user.uid}`}>
-              <Button variant="ghost" size="sm" className="gap-1">
-                Profile
-                <ExternalLink className="h-3 w-3" />
-              </Button>
-            </Link>
-          </div>
-        ))
-      )}
-    </div>
-  );
-
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
@@ -141,9 +170,43 @@ const Leaderboard = () => {
           <h1 className="font-display text-3xl font-bold text-foreground mb-2">
             Leaderboard
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mb-4">
             Top workers ranked by approved work count
           </p>
+          <div className="flex justify-center gap-2">
+            <Button
+              variant={sortBy === 'rank' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                if (sortBy === 'rank') {
+                  setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                } else {
+                  setSortBy('rank');
+                  setSortOrder('asc');
+                }
+              }}
+              className="gap-1"
+            >
+              Rank
+              {sortBy === 'rank' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+            </Button>
+            <Button
+              variant={sortBy === 'earnings' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                if (sortBy === 'earnings') {
+                  setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                } else {
+                  setSortBy('earnings');
+                  setSortOrder('desc');
+                }
+              }}
+              className="gap-1"
+            >
+              Earnings
+              {sortBy === 'earnings' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+            </Button>
+          </div>
         </div>
 
         {/* Leaderboard Tabs */}
@@ -172,13 +235,13 @@ const Leaderboard = () => {
               ) : (
                 <>
                   <TabsContent value="daily">
-                    <LeaderboardList leaders={dailyLeaders} />
+                    <LeaderboardList leaders={dailyLeaders} sortBy={sortBy} sortOrder={sortOrder} getRankIcon={getRankIcon} getRankBgClass={getRankBgClass} />
                   </TabsContent>
                   <TabsContent value="weekly">
-                    <LeaderboardList leaders={weeklyLeaders} />
+                    <LeaderboardList leaders={weeklyLeaders} sortBy={sortBy} sortOrder={sortOrder} getRankIcon={getRankIcon} getRankBgClass={getRankBgClass} />
                   </TabsContent>
                   <TabsContent value="monthly">
-                    <LeaderboardList leaders={monthlyLeaders} />
+                    <LeaderboardList leaders={monthlyLeaders} sortBy={sortBy} sortOrder={sortOrder} getRankIcon={getRankIcon} getRankBgClass={getRankBgClass} />
                   </TabsContent>
                 </>
               )}
