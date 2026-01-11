@@ -21,7 +21,7 @@
     "noImplicitAny": false,
     "noFallthroughCasesInSwitch": false,
     
-    "baseUrl": ".",
+    "baseUrl": "../",
     "paths": {
       "@/*": ["./src/*"]
     },
@@ -29,5 +29,6 @@
     /* Types */
     "types": ["node", "jest"]
   },
-  "include": ["src"]
+  "include": ["../src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
 }
