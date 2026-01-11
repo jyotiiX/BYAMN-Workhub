@@ -1,31 +1,29 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Mail, Lock, User, ArrowLeft, Loader2 } from 'lucide-react';
-import { z } from 'zod';
-import Navbar from '@/components/layout/Navbar';
-import Footer from '@/components/layout/Footer';
-
-const loginSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-const registerSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters').max(50, 'Name too long'),
-  email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ['confirmPassword'],
-});
+// ... existing imports
 
 const Auth = () => {
+feat/loading-indicators-issue-84
+  // ... existing state and logic (searchParams, navigate, auth, toast, etc.)
+
+  return (
+    <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <Navbar />
+        <div className="bg-card rounded-2xl shadow-xl p-8 animate-scale-in">
+          <div className="text-center mb-8">
+            {/* ... Header content remains same ... */}
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* ... Form Fields (fullName, email, password) remain same ... */}
+
+            {/* UPDATED BUTTON: Using the new isLoading prop */}
+            <Button 
+              type="submit" 
+              className="w-full" 
+              size="lg" 
+              isLoading={loading} 
+            >
+
   const [searchParams] = useSearchParams();
   const mode = searchParams.get('mode') || 'login';
   const navigate = useNavigate();
@@ -330,6 +328,7 @@ const Auth = () => {
 
             <Button type="submit" className="w-full h-12 text-base font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]" size="lg" disabled={loading}>
               {loading && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}
+
               {showForgotPassword
                 ? 'Send Reset Link'
                 : isLogin
@@ -337,6 +336,10 @@ const Auth = () => {
                 : 'Create Account'}
             </Button>
           </form>
+
+ feat/loading-indicators-issue-84
+          <div className="mt-6 text-center text-sm">
+            {/* ... Bottom Links remain same ... */}
 
           <div className="mt-8 text-center">
             {showForgotPassword ? (
@@ -362,7 +365,12 @@ const Auth = () => {
                 </Link>
               </p>
             )}
+
           </div>
+
+ feat/loading-indicators-issue-84
+        {/* ... Footer text remains same ... */}
+      </div>
 
           <p className="text-center text-muted-foreground text-sm mt-6">
             By continuing, you agree to our{' '}
@@ -378,6 +386,7 @@ const Auth = () => {
         </div>
       </div>
       
+
       <Footer />
     </div>
   );
