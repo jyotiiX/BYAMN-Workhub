@@ -15,6 +15,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { fetchTimeBasedLeaderboard } from '@/lib/data-cache';
 
 interface LeaderboardUser {
   uid: string;
@@ -33,27 +34,16 @@ const Leaderboard = () => {
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const usersSnap = await get(ref(database, 'users'));
-        if (usersSnap.exists()) {
-          const usersData = usersSnap.val();
-          const usersArray: LeaderboardUser[] = Object.entries(usersData)
-            .map(([uid, user]: [string, any]) => ({
-              uid,
-              fullName: user.fullName,
-              profileImage: user.profileImage,
-              approvedWorks: user.approvedWorks || 0,
-            }))
-            .filter(u => u.approvedWorks > 0)
-            .sort((a, b) => b.approvedWorks - a.approvedWorks)
-            .slice(0, 50)
-            .map((user, index) => ({ ...user, rank: index + 1 }));
-
-          // For MVP, using same data for all periods
-          // In production, you'd filter by date ranges
-          setDailyLeaders(usersArray);
-          setWeeklyLeaders(usersArray);
-          setMonthlyLeaders(usersArray);
-        }
+        // Fetch all leaderboards in parallel
+        const [dailyData, weeklyData, monthlyData] = await Promise.all([
+          fetchTimeBasedLeaderboard('daily'),
+          fetchTimeBasedLeaderboard('weekly'),
+          fetchTimeBasedLeaderboard('monthly')
+        ]);
+        
+        setDailyLeaders(dailyData);
+        setWeeklyLeaders(weeklyData);
+        setMonthlyLeaders(monthlyData);
       } catch (error) {
         console.error('Error fetching leaderboard:', error);
       } finally {

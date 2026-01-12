@@ -9,17 +9,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Loader2, Save } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, User } from 'lucide-react';
 import { z } from 'zod';
+import { isValidUrl, isValidName, isValidBio, isValidProfileImage } from '@/lib/utils';
 
 const profileSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters').max(50),
-  bio: z.string().max(200, 'Bio must be less than 200 characters'),
+  fullName: z.string()
+    .min(2, 'Name must be at least 2 characters')
+    .max(50, 'Name must be less than 50 characters')
+    .refine(isValidName, 'Name can only contain letters, spaces, hyphens, and apostrophes'),
+  bio: z.string()
+    .max(200, 'Bio must be less than 200 characters')
+    .refine(isValidBio, 'Bio cannot contain HTML tags'),
   linkedin: z.string().url('Invalid URL').optional().or(z.literal('')),
   twitter: z.string().url('Invalid URL').optional().or(z.literal('')),
   instagram: z.string().url('Invalid URL').optional().or(z.literal('')),
   youtube: z.string().url('Invalid URL').optional().or(z.literal('')),
   other: z.string().url('Invalid URL').optional().or(z.literal('')),
+  profileImage: z.string()
+    .url('Invalid URL')
+    .refine(isValidProfileImage, { message: 'Must be a valid image URL' })
+    .optional()
+    .or(z.literal('')),
 });
 
 const ProfileEdit = () => {
@@ -31,6 +42,7 @@ const ProfileEdit = () => {
   const [formData, setFormData] = useState({
     fullName: profile?.fullName || '',
     bio: profile?.bio || '',
+    profileImage: profile?.profileImage || '',
     linkedin: profile?.socialLinks?.linkedin || '',
     twitter: profile?.socialLinks?.twitter || '',
     instagram: profile?.socialLinks?.instagram || '',
@@ -55,12 +67,23 @@ const ProfileEdit = () => {
       });
       return;
     }
+    
+    // Additional validation for profile image URL
+    if (formData.profileImage && !isValidProfileImage(formData.profileImage)) {
+      toast({
+        title: 'Invalid URL',
+        description: 'Please enter a valid profile image URL (must be an image file).',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setLoading(true);
     try {
       await updateProfile({
         fullName: formData.fullName,
         bio: formData.bio,
+        profileImage: formData.profileImage || undefined,
         socialLinks: {
           linkedin: formData.linkedin || undefined,
           twitter: formData.twitter || undefined,
@@ -75,10 +98,11 @@ const ProfileEdit = () => {
         description: 'Your profile has been updated successfully.',
       });
       navigate('/profile');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
       toast({
         title: 'Error',
-        description: 'Failed to update profile. Please try again.',
+        description: error.message || 'Failed to update profile. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -100,6 +124,7 @@ const ProfileEdit = () => {
             variant="ghost" 
             className="mb-6 gap-2"
             onClick={() => navigate('/profile')}
+            aria-label="Back to profile"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Profile
@@ -119,7 +144,11 @@ const ProfileEdit = () => {
                     value={formData.fullName}
                     onChange={handleChange}
                     placeholder="Your full name"
+                    aria-describedby="fullName-help"
                   />
+                  <p id="fullName-help" className="text-xs text-muted-foreground">
+                    {formData.fullName.length}/50 characters
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -131,9 +160,25 @@ const ProfileEdit = () => {
                     onChange={handleChange}
                     placeholder="A short description about yourself"
                     rows={3}
+                    aria-describedby="bio-help"
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p id="bio-help" className="text-xs text-muted-foreground">
                     {formData.bio.length}/200 characters
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="profileImage">Profile Picture URL</Label>
+                  <Input
+                    id="profileImage"
+                    name="profileImage"
+                    value={formData.profileImage}
+                    onChange={handleChange}
+                    placeholder="https://example.com/image.jpg"
+                    aria-describedby="profileImage-help"
+                  />
+                  <p id="profileImage-help" className="text-xs text-muted-foreground">
+                    Enter a direct URL to your profile picture (JPG, PNG, GIF, WebP)
                   </p>
                 </div>
 
@@ -141,7 +186,7 @@ const ProfileEdit = () => {
                   <div className="flex items-center justify-between">
                     <Label>Social Links</Label>
                     <span className="text-xs text-muted-foreground">
-                      {filledLinks}/4 links (max 4)
+                      {filledLinks}/5 links
                     </span>
                   </div>
 
@@ -154,7 +199,6 @@ const ProfileEdit = () => {
                         value={formData.linkedin}
                         onChange={handleChange}
                         placeholder="https://linkedin.com/in/username"
-                        disabled={!formData.linkedin && filledLinks >= 4}
                       />
                     </div>
 
@@ -166,7 +210,6 @@ const ProfileEdit = () => {
                         value={formData.twitter}
                         onChange={handleChange}
                         placeholder="https://x.com/username"
-                        disabled={!formData.twitter && filledLinks >= 4}
                       />
                     </div>
 
@@ -178,7 +221,6 @@ const ProfileEdit = () => {
                         value={formData.instagram}
                         onChange={handleChange}
                         placeholder="https://instagram.com/username"
-                        disabled={!formData.instagram && filledLinks >= 4}
                       />
                     </div>
 
@@ -190,7 +232,6 @@ const ProfileEdit = () => {
                         value={formData.youtube}
                         onChange={handleChange}
                         placeholder="https://youtube.com/@channel"
-                        disabled={!formData.youtube && filledLinks >= 4}
                       />
                     </div>
 
@@ -202,16 +243,12 @@ const ProfileEdit = () => {
                         value={formData.other}
                         onChange={handleChange}
                         placeholder="https://yourwebsite.com"
-                        disabled={!formData.other && filledLinks >= 4}
                       />
                     </div>
                   </div>
                 </div>
 
                 <div className="pt-4 border-t">
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Note: Profile picture can only be changed by admin.
-                  </p>
                   <Button type="submit" className="gap-2" disabled={loading}>
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Save Changes

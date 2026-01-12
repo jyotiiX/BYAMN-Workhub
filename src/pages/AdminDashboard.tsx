@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, get, update, remove } from 'firebase/database';
@@ -10,6 +9,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import {
     Table,
     TableBody,
@@ -29,6 +38,7 @@ import {
     Clock,
     ExternalLink
 } from 'lucide-react';
+import { approveWorkAndCredit, processMoneyRequest, rejectWorkAndRestoreCampaignBudget } from '@/lib/data-cache';
 
 // Interfaces
 interface UserData {
@@ -39,6 +49,7 @@ interface UserData {
     isBlocked: boolean;
     earnedMoney: number;
     addedMoney: number;
+    profileImage?: string;
 }
 
 interface CampaignData {
@@ -79,6 +90,7 @@ const AdminDashboard = () => {
     const { profile } = useAuth();
     const { toast } = useToast();
     const [loading, setLoading] = useState(true);
+    const [imageUpdateUrl, setImageUpdateUrl] = useState<Record<string, string>>({});
 
     const [stats, setStats] = useState({
         totalUsers: 0,
@@ -195,6 +207,23 @@ const AdminDashboard = () => {
         }
     };
 
+    const handleProfileImageUpdate = async (userId: string, newImageUrl: string) => {
+        try {
+            await update(ref(database, `users/${userId}`), {
+                profileImage: newImageUrl || null
+            });
+            toast({ title: "Profile Image Updated Successfully" });
+            fetchAllData();
+        } catch (error) {
+            toast({ title: "Failed to Update Profile Image", variant: "destructive" });
+        }
+    };
+
+    const handleProfileImageUpdateSubmit = (userId: string) => {
+        const imageUrl = imageUpdateUrl[userId] || '';
+        handleProfileImageUpdate(userId, imageUrl);
+    };
+
     const handleCampaignAction = async (campaignId: string, action: 'delete' | 'pause' | 'resume') => {
         if (!confirm(`Are you sure you want to ${action} this campaign?`)) return;
 
@@ -216,27 +245,31 @@ const AdminDashboard = () => {
 
     const handleWorkAction = async (work: WorkData, action: 'approve' | 'reject') => {
         try {
-            // Update work status path: works/{userId}/{workId}
-            await update(ref(database, `works/${work.userId}/${work.id}`), {
-                status: action === 'approved' ? 'approved' : 'rejected' // Fix: 'approved' not 'approve'
-            });
-
-            if (action === 'approve') {
-                // Add money to user wallet
-                const walletRef = ref(database, `wallets/${work.userId}`);
-                const walletSnap = await get(walletRef);
-                if (walletSnap.exists()) {
-                    const currentBalance = walletSnap.val().earnedBalance || 0;
-                    await update(walletRef, {
-                        earnedBalance: currentBalance + work.reward
-                    });
-                }
-
-                // Record earning transaction
-                // NOTE: Ideally should use a cloud function for atomic updates
+            // Validate work data before processing
+            if (!work || !work.id || !work.userId || !work.campaignId || typeof work.reward !== 'number' || work.reward <= 0 || work.reward > 10000) {
+                toast({ title: "Invalid Work Data", description: "Work data is invalid or incomplete.", variant: "destructive" });
+                return;
             }
-
-            toast({ title: `Work ${action}d` });
+            
+            if (action === 'approve') {
+                // Use atomic operation to approve work and credit user
+                const success = await approveWorkAndCredit(work.id, work.userId, work.campaignId, work.reward, profile?.uid);
+                if (success) {
+                    toast({ title: `Work approved and credited` });
+                } else {
+                    toast({ title: "Work approval failed", variant: "destructive" });
+                    return;
+                }
+            } else {
+                // Use atomic operation to reject work and restore campaign budget
+                const success = await rejectWorkAndRestoreCampaignBudget(work.id, work.userId, work.campaignId, profile?.uid);
+                if (success) {
+                    toast({ title: `Work rejected` });
+                } else {
+                    toast({ title: "Work rejection failed", variant: "destructive" });
+                    return;
+                }
+            }
             fetchAllData();
         } catch (error) {
             console.error(error);
@@ -246,44 +279,22 @@ const AdminDashboard = () => {
 
     const handleMoneyRequest = async (req: MoneyRequest, action: 'approve' | 'reject') => {
         try {
-            const path = req.type === 'add_money' ? 'adminRequests/addMoney' : 'adminRequests/withdrawals';
-
-            // Update request status
-            await update(ref(database, `${path}/${req.id}`), {
-                status: action === 'approved' ? 'approved' : 'rejected'
-            });
-
-            // Update transaction status
-            await update(ref(database, `transactions/${req.userId}/${req.transactionId}`), {
-                status: action === 'approved' ? (req.type === 'add_money' ? 'approved' : 'paid') : 'rejected'
-            });
-
-            if (action === 'approve') {
-                const walletRef = ref(database, `wallets/${req.userId}`);
-                const walletSnap = await get(walletRef);
-                const wallet = walletSnap.val() || { earnedBalance: 0, addedBalance: 0 };
-
-                if (req.type === 'add_money') {
-                    // Add to addedBalance
-                    await update(walletRef, {
-                        addedBalance: (wallet.addedBalance || 0) + req.amount,
-                        pendingAddMoney: Math.max(0, (wallet.pendingAddMoney || 0) - req.amount) // Reduce pending
-                    });
-                } else {
-                    // Withdrawal: Deduct from earnedBalance (already deducted potentially? No, typically deducted upon approval or reserved. 
-                    // In the Wallet.tsx, it didn't seem to reserve funds, just checked balance. 
-                    // So we should deduct now.)
-
-                    // Wait, if it wasn't reserved, users could spend it? 
-                    // Basic implementation: Deduct now.
-                    await update(walletRef, {
-                        earnedBalance: (wallet.earnedBalance || 0) - req.amount,
-                        totalWithdrawn: (wallet.totalWithdrawn || 0) + req.amount
-                    });
-                }
+            // Validate request data before processing
+            if (!req || !req.id || !req.userId || !req.type || typeof req.amount !== 'number' || req.amount <= 0 || 
+                (req.type === 'add_money' && (req.amount < 10 || req.amount > 100000)) ||
+                (req.type === 'withdrawal' && (req.amount < 500 || req.amount > 50000))) {
+                toast({ title: "Invalid Request Data", description: "Request data is invalid or incomplete.", variant: "destructive" });
+                return;
             }
-
-            toast({ title: `Request ${action}d` });
+            
+            const status = action === 'approve' ? 'approved' : 'rejected';
+            const success = await processMoneyRequest(req.id, req.type, req.userId, req.amount, status, profile?.uid);
+            if (success) {
+                toast({ title: `Request ${action}d` });
+            } else {
+                toast({ title: "Request processing failed", variant: "destructive" });
+                return;
+            }
             fetchAllData();
         } catch (error) {
             console.error(error);
@@ -495,13 +506,50 @@ const AdminDashboard = () => {
                                                 </TableCell>
                                                 <TableCell>
                                                     {user.role !== 'admin' && (
-                                                        <Button
-                                                            size="sm"
-                                                            variant={user.isBlocked ? "outline" : "destructive"}
-                                                            onClick={() => handleUserAction(user.uid, user.isBlocked ? 'unblock' : 'block')}
-                                                        >
-                                                            {user.isBlocked ? "Unblock" : "Block"}
-                                                        </Button>
+                                                        <div className="flex flex-col gap-2">
+                                                            <Button
+                                                                size="sm"
+                                                                variant={user.isBlocked ? "outline" : "destructive"}
+                                                                onClick={() => handleUserAction(user.uid, user.isBlocked ? 'unblock' : 'block')}
+                                                            >
+                                                                {user.isBlocked ? "Unblock" : "Block"}
+                                                            </Button>
+                                                            <Dialog>
+                                                                <DialogTrigger asChild>
+                                                                    <Button size="sm" variant="outline">
+                                                                        Update Image
+                                                                    </Button>
+                                                                </DialogTrigger>
+                                                                <DialogContent>
+                                                                    <DialogHeader>
+                                                                        <DialogTitle>Update Profile Image</DialogTitle>
+                                                                        <DialogDescription>
+                                                                            Enter a new profile image URL for {user.fullName}
+                                                                        </DialogDescription>
+                                                                    </DialogHeader>
+                                                                    <div className="space-y-4 mt-4">
+                                                                        <div className="space-y-2">
+                                                                            <Label htmlFor="profileImage">Profile Image URL</Label>
+                                                                            <Input
+                                                                                id="profileImage"
+                                                                                placeholder="https://example.com/image.jpg"
+                                                                                defaultValue={user.profileImage || ''}
+                                                                                onChange={(e) => setImageUpdateUrl(prev => ({
+                                                                                    ...prev,
+                                                                                    [user.uid]: e.target.value
+                                                                                }))}
+                                                                            />
+                                                                        </div>
+                                                                        <Button 
+                                                                            onClick={() => handleProfileImageUpdateSubmit(user.uid)}
+                                                                            className="w-full"
+                                                                        >
+                                                                            Update Image
+                                                                        </Button>
+                                                                    </div>
+                                                                </DialogContent>
+                                                            </Dialog>
+                                                        </div>
                                                     )}
                                                 </TableCell>
                                             </TableRow>

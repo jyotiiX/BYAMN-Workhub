@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ref, get, query, orderByChild } from 'firebase/database';
+import { ref, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDebounce } from '@/hooks/useDebounce'; // Added this import
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { 
   Search, 
-  Filter, 
   IndianRupee, 
   Users, 
   Clock,
@@ -35,12 +35,15 @@ interface Campaign {
 }
 
 const Campaigns = () => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [filteredCampaigns, setFilteredCampaigns] = useState<Campaign[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'high-reward' | 'new'>('all');
+
+  // Use the debounce hook with a 500ms delay
+  const debouncedSearch = useDebounce(searchQuery, 500);
 
   useEffect(() => {
     const fetchCampaigns = async () => {
@@ -69,18 +72,19 @@ const Campaigns = () => {
     fetchCampaigns();
   }, []);
 
+  // Update this effect to use debouncedSearch
   useEffect(() => {
     let result = [...campaigns];
     
-    // Apply search
-    if (searchQuery) {
+    // Apply debounced search logic
+    if (debouncedSearch) {
       result = result.filter(c => 
-        c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.description.toLowerCase().includes(searchQuery.toLowerCase())
+        c.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        c.description.toLowerCase().includes(debouncedSearch.toLowerCase())
       );
     }
     
-    // Apply filter
+    // Apply sorting filters
     switch (filter) {
       case 'high-reward':
         result.sort((a, b) => b.rewardPerWorker - a.rewardPerWorker);
@@ -91,7 +95,7 @@ const Campaigns = () => {
     }
     
     setFilteredCampaigns(result);
-  }, [searchQuery, filter, campaigns]);
+  }, [debouncedSearch, filter, campaigns]);
 
   const getSpotsLeft = (campaign: Campaign) => {
     return campaign.totalWorkers - campaign.completedWorkers;
@@ -102,7 +106,6 @@ const Campaigns = () => {
       <Navbar />
       
       <main className="flex-1 container mx-auto px-4 py-8">
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="font-display text-3xl font-bold text-foreground mb-2">
@@ -122,7 +125,6 @@ const Campaigns = () => {
           )}
         </div>
 
-        {/* Search and Filter */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -160,7 +162,6 @@ const Campaigns = () => {
           </div>
         </div>
 
-        {/* Campaigns Grid */}
         {loading ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -169,10 +170,6 @@ const Campaigns = () => {
                   <div className="h-6 bg-muted rounded w-3/4 mb-4" />
                   <div className="h-4 bg-muted rounded w-full mb-2" />
                   <div className="h-4 bg-muted rounded w-2/3 mb-4" />
-                  <div className="flex gap-4">
-                    <div className="h-8 bg-muted rounded flex-1" />
-                    <div className="h-8 bg-muted rounded flex-1" />
-                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -184,13 +181,8 @@ const Campaigns = () => {
               No Campaigns Found
             </h2>
             <p className="text-muted-foreground mb-6">
-              {searchQuery ? 'Try a different search term' : 'Be the first to create a campaign!'}
+              {debouncedSearch ? `No results for "${debouncedSearch}"` : 'Be the first to create a campaign!'}
             </p>
-            {user && (
-              <Link to="/campaigns/create">
-                <Button>Create Campaign</Button>
-              </Link>
-            )}
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -227,7 +219,6 @@ const Campaigns = () => {
                     </div>
                   </div>
 
-                  {/* Progress bar */}
                   <div className="mb-4">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
                       <span>Progress</span>
@@ -255,7 +246,6 @@ const Campaigns = () => {
           </div>
         )}
       </main>
-
       <Footer />
     </div>
   );

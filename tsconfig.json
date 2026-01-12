@@ -12,5 +12,8 @@
     "allowJs": true,
     "noUnusedLocals": false,
     "strictNullChecks": false
+  },
+  "typeAcquisition": {
+    "include": ["node", "jest"]
   }
 }

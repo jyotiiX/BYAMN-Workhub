@@ -20,11 +20,14 @@
     "noUnusedParameters": false,
     "noImplicitAny": false,
     "noFallthroughCasesInSwitch": false,
-
+    
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    
+    /* Types */
+    "types": ["node", "jest"]
   },
   "include": ["src"]
 }

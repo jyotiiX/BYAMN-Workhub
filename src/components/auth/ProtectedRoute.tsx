@@ -1,5 +1,5 @@
-import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { ReactNode, useEffect } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
@@ -9,7 +9,19 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps) => {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, forceLogout } = useAuth();
+  const navigate = useNavigate();
+  
+  // Check for session expiration and handle accordingly
+  useEffect(() => {
+    // If user is null but profile exists in context, it might be due to session timeout
+    if (!user && profile) {
+      // This could indicate a session timeout situation
+      // We'll redirect to login but maintain a flag to show timeout message
+      localStorage.setItem('sessionExpired', 'true');
+      navigate('/auth', { replace: true });
+    }
+  }, [user, profile, navigate]);
 
   if (loading) {
     return (
@@ -26,8 +38,16 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     return <Navigate to="/auth" replace />;
   }
 
-  if (requireAdmin && profile?.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
+  // Wait for profile to load if user is authenticated but profile is not yet available
+  if (user && !profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading profile...</p>
+        </div>
+      </div>
+    );
   }
 
   if (profile?.isBlocked) {
@@ -45,6 +65,10 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         </div>
       </div>
     );
+  }
+
+  if (requireAdmin && profile?.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

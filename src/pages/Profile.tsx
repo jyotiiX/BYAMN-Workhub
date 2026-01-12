@@ -34,6 +34,7 @@ interface UserProfile {
   profileImage?: string;
   approvedWorks: number;
   createdAt: number;
+  totalWithdrawn: number; // Changed from optional to required
 }
 
 const Profile = () => {
@@ -57,7 +58,19 @@ const Profile = () => {
       try {
         const userSnap = await get(ref(database, `users/${targetUserId}`));
         if (userSnap.exists()) {
-          setProfile({ uid: targetUserId, ...userSnap.val() });
+          const userData = userSnap.val();
+          // Ensure all required fields exist with defaults if missing
+          const profileData: UserProfile = {
+            uid: targetUserId,
+            fullName: userData.fullName || '',
+            bio: userData.bio || '',
+            socialLinks: userData.socialLinks || {},
+            profileImage: userData.profileImage,
+            approvedWorks: userData.approvedWorks || 0,
+            createdAt: userData.createdAt || Date.now(),
+            totalWithdrawn: userData.totalWithdrawn || 0, // Ensure this field exists
+          };
+          setProfile(profileData);
         }
       } catch (error) {
         console.error('Error fetching profile:', error);
@@ -170,6 +183,15 @@ const Profile = () => {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground">Approved Works</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 text-primary">
+                      <TrendingUp className="h-4 w-4" />
+                      <span className="font-display text-2xl font-bold">
+                        ₹{profile.totalWithdrawn || 0}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Total Withdrawn</p>
                   </div>
                   <div className="text-center">
                     <p className="text-sm text-muted-foreground">

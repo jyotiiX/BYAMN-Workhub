@@ -15,7 +15,6 @@
                         </DropdownMenuItem>
                       </>
                     )}
-=======
                     {profile?.role === 'admin' && (
                       <>
                         <DropdownMenuSeparator />

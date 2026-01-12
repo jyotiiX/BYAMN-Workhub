@@ -33,6 +33,13 @@ import {
   Loader2
 } from 'lucide-react';
 import { z } from 'zod';
+import { 
+  fetchWalletData, 
+  fetchTransactions,
+  invalidateUserCache,
+  dataCache,
+  updateWalletBalance
+} from '@/lib/data-cache';
 
 interface WalletData {
   earnedBalance: number;
@@ -53,13 +60,13 @@ interface Transaction {
 }
 
 const addMoneySchema = z.object({
-  amount: z.number().min(10, 'Minimum amount is ₹10'),
-  upiTransactionId: z.string().min(10, 'Enter a valid UPI Transaction ID'),
+  amount: z.number().min(10, 'Minimum amount is ₹10').max(100000, 'Maximum amount is ₹100,000'),
+  upiTransactionId: z.string().min(10, 'Enter a valid UPI Transaction ID').max(50, 'UPI Transaction ID too long'),
 });
 
 const withdrawSchema = z.object({
-  amount: z.number().min(500, 'Minimum withdrawal is ₹500'),
-  upiId: z.string().min(5, 'Enter a valid UPI ID'),
+  amount: z.number().min(500, 'Minimum withdrawal is ₹500').max(50000, 'Maximum withdrawal is ₹50,000'),
+  upiId: z.string().min(5, 'Enter a valid UPI ID').max(50, 'UPI ID too long'),
 });
 
 const Wallet = () => {
@@ -83,40 +90,73 @@ const Wallet = () => {
   });
 
   useEffect(() => {
-    const fetchWalletData = async () => {
-      if (!profile?.uid) return;
+    const fetchWalletAndTransactions = async () => {
+      if (!profile?.uid) {
+        setError('User not authenticated. Please log in to access your wallet.');
+        setLoading(false);
+        return;
+      }
 
       try {
-        // Fetch wallet
-        const walletSnap = await get(ref(database, `wallets/${profile.uid}`));
-        if (walletSnap.exists()) {
-          setWallet(walletSnap.val());
+        setLoading(true);
+
+        // Fetch wallet data using the data cache
+        const walletData = await fetchWalletData(profile.uid);
+        if (walletData) {
+          setWallet(walletData);
+        } else {
+          setWallet({
+            earnedBalance: 0,
+            addedBalance: 0,
+            pendingAddMoney: 0,
+            totalWithdrawn: 0
+          });
         }
 
-        // Fetch transactions
-        const transSnap = await get(ref(database, `transactions/${profile.uid}`));
-        if (transSnap.exists()) {
-          const data = transSnap.val();
-          const transArray: Transaction[] = Object.entries(data)
+        // Fetch transactions using the data cache
+        const transactionsData = await fetchTransactions(profile.uid);
+        if (transactionsData) {
+          const transArray: Transaction[] = Object.entries(transactionsData)
             .map(([id, trans]: [string, any]) => ({
               id,
               ...trans,
             }))
+            .filter((trans): trans is Transaction => {
+              // Filter out invalid transactions
+              return trans && trans.type && trans.amount !== undefined && trans.createdAt !== undefined;
+            })
             .sort((a, b) => b.createdAt - a.createdAt);
           setTransactions(transArray);
+        } else {
+          setTransactions([]);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching wallet:', error);
+        setError(error.message || 'Failed to load wallet data. Please try again later.');
+        // Set default values
+        setWallet({
+          earnedBalance: 0,
+          addedBalance: 0,
+          pendingAddMoney: 0,
+          totalWithdrawn: 0
+        });
       } finally {
         setLoading(false);
       }
     };
 
-    fetchWalletData();
-  }, [profile?.uid]);
+    fetchWalletAndTransactions();
+  }, [profile?.uid, toast]);
 
   const handleAddMoney = async () => {
-    if (!profile?.uid) return;
+    if (!profile?.uid) {
+      toast({
+        title: 'Authentication Error',
+        description: 'You must be logged in to add money.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const amount = parseFloat(addMoneyForm.amount);
     const result = addMoneySchema.safeParse({
@@ -133,19 +173,67 @@ const Wallet = () => {
       return;
     }
 
+    // Additional validation for amount
+    if (isNaN(amount) || amount <= 0) {
+      toast({
+        title: 'Invalid Amount',
+        description: 'Please enter a valid positive amount.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Additional validation to prevent excessive amounts
+    if (amount > 100000) {
+      toast({
+        title: 'Amount Exceeds Limit',
+        description: 'Maximum amount per request is ₹100,000.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
-      // Create transaction
-      const transRef = push(ref(database, `transactions/${profile.uid}`));
-      await set(transRef, {
+      // Check for rate limiting (check recent requests)
+      const recentTransSnap = await get(ref(database, `transactions/${profile.uid}`));
+      if (recentTransSnap.exists()) {
+        const recentTrans = recentTransSnap.val();
+        const now = Date.now();
+        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
+        
+        let recentAddMoneyCount = 0;
+        for (const trans of Object.values(recentTrans || {})) {
+          const transaction = trans as Transaction;
+          if (transaction.type === 'add_money' && transaction.createdAt && transaction.createdAt > oneHourAgo) {
+            recentAddMoneyCount++;
+          }
+        }
+        
+        // Limit to 3 add money requests per hour
+        if (recentAddMoneyCount >= 3) {
+          toast({
+            title: 'Rate Limit Exceeded',
+            description: 'You can only submit 3 add money requests per hour.',
+            variant: 'destructive',
+          });
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // Create transaction record first
+      const transactionRef = push(ref(database, `transactions/${profile.uid}`));
+      const transaction = {
         type: 'add_money',
         amount,
         status: 'pending',
         description: 'Add money request',
         upiTransactionId: addMoneyForm.upiTransactionId,
         createdAt: Date.now(),
-      });
-
+      };
+      await set(transactionRef, transaction);
+      
       // Create admin request
       const requestRef = push(ref(database, 'adminRequests/addMoney'));
       await set(requestRef, {
@@ -156,8 +244,13 @@ const Wallet = () => {
         upiTransactionId: addMoneyForm.upiTransactionId,
         status: 'pending',
         createdAt: Date.now(),
-        transactionId: transRef.key,
+        transactionId: requestRef.key, // Use the admin request ID as transactionId
       });
+
+      // Update wallet to reflect pending add money using atomic operation
+      await updateWalletBalance(profile.uid, (currentBalance) => ({
+        pendingAddMoney: (currentBalance.pendingAddMoney || 0) + amount
+      }), profile.uid);
 
       toast({
         title: 'Request Submitted',
@@ -167,13 +260,31 @@ const Wallet = () => {
       setAddMoneyOpen(false);
       setAddMoneyForm({ amount: '', upiTransactionId: '' });
       
-      // Refresh data
-      const walletSnap = await get(ref(database, `wallets/${profile.uid}`));
-      if (walletSnap.exists()) setWallet(walletSnap.val());
-    } catch (error) {
+      // Refetch data to update UI
+      const updatedWallet = await fetchWalletData(profile.uid);
+      if (updatedWallet) {
+        setWallet(updatedWallet);
+      }
+      
+      const updatedTransactions = await fetchTransactions(profile.uid);
+      if (updatedTransactions) {
+        const transArray: Transaction[] = Object.entries(updatedTransactions)
+          .map(([id, trans]: [string, any]) => ({
+            id,
+            ...trans,
+          }))
+          .filter((trans): trans is Transaction => {
+            // Filter out invalid transactions
+            return trans && trans.type && trans.amount !== undefined && trans.createdAt !== undefined;
+          })
+          .sort((a, b) => b.createdAt - a.createdAt);
+        setTransactions(transArray);
+      }
+    } catch (error: any) {
+      console.error('Error adding money:', error);
       toast({
         title: 'Error',
-        description: 'Failed to submit request. Please try again.',
+        description: error.message || 'Failed to submit request. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -182,7 +293,23 @@ const Wallet = () => {
   };
 
   const handleWithdraw = async () => {
-    if (!profile?.uid || !wallet) return;
+    if (!profile?.uid) {
+      toast({
+        title: 'Authentication Error',
+        description: 'You must be logged in to withdraw money.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (!wallet) {
+      toast({
+        title: 'Wallet Error',
+        description: 'Wallet data not loaded. Please refresh the page.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const amount = parseFloat(withdrawForm.amount);
     const result = withdrawSchema.safeParse({
@@ -199,6 +326,16 @@ const Wallet = () => {
       return;
     }
 
+    // Additional validation for amount
+    if (isNaN(amount) || amount <= 0) {
+      toast({
+        title: 'Invalid Amount',
+        description: 'Please enter a valid positive amount.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (amount > wallet.earnedBalance) {
       toast({
         title: 'Insufficient Balance',
@@ -207,20 +344,58 @@ const Wallet = () => {
       });
       return;
     }
+    
+    // Additional validation to prevent excessive withdrawals
+    if (amount > 50000) {
+      toast({
+        title: 'Amount Exceeds Limit',
+        description: 'Maximum withdrawal per request is ₹50,000.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSubmitting(true);
     try {
-      // Create transaction
-      const transRef = push(ref(database, `transactions/${profile.uid}`));
-      await set(transRef, {
+      // Check for rate limiting (check recent requests)
+      const recentTransSnap = await get(ref(database, `transactions/${profile.uid}`));
+      if (recentTransSnap.exists()) {
+        const recentTrans = recentTransSnap.val();
+        const now = Date.now();
+        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
+        
+        let recentWithdrawCount = 0;
+        for (const trans of Object.values(recentTrans || {})) {
+          const transaction = trans as Transaction;
+          if (transaction.type === 'withdrawal' && transaction.createdAt && transaction.createdAt > oneHourAgo) {
+            recentWithdrawCount++;
+          }
+        }
+        
+        // Limit to 2 withdrawal requests per hour
+        if (recentWithdrawCount >= 2) {
+          toast({
+            title: 'Rate Limit Exceeded',
+            description: 'You can only submit 2 withdrawal requests per hour.',
+            variant: 'destructive',
+          });
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // Create transaction record first
+      const transactionRef = push(ref(database, `transactions/${profile.uid}`));
+      const transaction = {
         type: 'withdrawal',
         amount,
         status: 'pending',
         description: 'Withdrawal request',
         upiId: withdrawForm.upiId,
         createdAt: Date.now(),
-      });
-
+      };
+      await set(transactionRef, transaction);
+      
       // Create admin request
       const requestRef = push(ref(database, 'adminRequests/withdrawals'));
       await set(requestRef, {
@@ -231,8 +406,13 @@ const Wallet = () => {
         upiId: withdrawForm.upiId,
         status: 'pending',
         createdAt: Date.now(),
-        transactionId: transRef.key,
+        transactionId: requestRef.key, // Use the admin request ID as transactionId
       });
+
+      // Update wallet to reflect pending withdrawal using atomic operation
+      await updateWalletBalance(profile.uid, (currentBalance) => ({
+        earnedBalance: (currentBalance.earnedBalance || 0) - amount
+      }), profile.uid);
 
       toast({
         title: 'Withdrawal Requested',
@@ -241,10 +421,32 @@ const Wallet = () => {
 
       setWithdrawOpen(false);
       setWithdrawForm({ amount: '', upiId: '' });
-    } catch (error) {
+      
+      // Refetch data to update UI
+      const updatedWallet = await fetchWalletData(profile.uid);
+      if (updatedWallet) {
+        setWallet(updatedWallet);
+      }
+      
+      const updatedTransactions = await fetchTransactions(profile.uid);
+      if (updatedTransactions) {
+        const transArray: Transaction[] = Object.entries(updatedTransactions)
+          .map(([id, trans]: [string, any]) => ({
+            id,
+            ...trans,
+          }))
+          .filter((trans): trans is Transaction => {
+            // Filter out invalid transactions
+            return trans && trans.type && trans.amount !== undefined && trans.createdAt !== undefined;
+          })
+          .sort((a, b) => b.createdAt - a.createdAt);
+        setTransactions(transArray);
+      }
+    } catch (error: any) {
+      console.error('Error withdrawing:', error);
       toast({
         title: 'Error',
-        description: 'Failed to submit request. Please try again.',
+        description: error.message || 'Failed to submit request. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -262,7 +464,7 @@ const Wallet = () => {
       case 'rejected':
         return <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">Rejected</Badge>;
       default:
-        return null;
+        return <Badge variant="outline" className="bg-muted text-muted-foreground">Unknown</Badge>;
     }
   };
 
@@ -282,6 +484,42 @@ const Wallet = () => {
   };
 
   const totalBalance = (wallet?.earnedBalance || 0) + (wallet?.addedBalance || 0);
+
+  const transactionStats = {
+    earnings: transactions.filter(t => t.type === 'earning').reduce((sum, t) => {
+      if (typeof t.amount === 'number' && t.status === 'approved') {
+        return sum + t.amount;
+      }
+      return sum;
+    }, 0),
+    withdrawals: transactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => {
+      if (typeof t.amount === 'number' && t.status === 'approved') {
+        return sum + t.amount;
+      }
+      return sum;
+    }, 0),
+    added: transactions.filter(t => t.type === 'add_money').reduce((sum, t) => {
+      if (typeof t.amount === 'number' && t.status === 'approved') {
+        return sum + t.amount;
+      }
+      return sum;
+    }, 0),
+  };
+
+  if (loading && !profile) {
+    return (
+      <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-muted">
+        <Navbar />
+        <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading wallet...</p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">

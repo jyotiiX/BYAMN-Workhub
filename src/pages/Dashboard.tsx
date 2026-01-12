@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, get, query, orderByChild, limitToLast, equalTo } from 'firebase/database';
+import { ref, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -11,15 +11,28 @@ import { Badge } from '@/components/ui/badge';
 import { 
   Wallet, 
   Briefcase, 
-  Trophy, 
-  TrendingUp,
-  ArrowRight,
   Clock,
   CheckCircle2,
-  XCircle,
-  IndianRupee,
-  PlusCircle
+  ArrowUpDown
 } from 'lucide-react';
+import { 
+  fetchWalletData, 
+  fetchWorks, 
+  fetchCampaigns,
+} from '@/lib/data-cache';
+
+// --- 1. DEFINING INTERFACES (Fixes all "any" red lines) ---
+interface Campaign {
+  id?: string;
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high';
+  completedWorkers: number;
+  totalWorkers: number;
+  rewardPerWorker: number;
+  creatorId: string;
+  status: string;
+}
 
 interface WalletData {
   earnedBalance: number;
@@ -39,8 +52,12 @@ interface WorkSubmission {
 
 const Dashboard = () => {
   const { profile } = useAuth();
+  
+  // --- 2. STATES WITH PROPER TYPES ---
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [recentWork, setRecentWork] = useState<WorkSubmission[]>([]);
+  const [userCampaigns, setUserCampaigns] = useState<Campaign[]>([]);
+  const [isSorted, setIsSorted] = useState(false);
   const [stats, setStats] = useState({
     pendingWorks: 0,
     approvedWorks: 0,
@@ -48,55 +65,57 @@ const Dashboard = () => {
     activeCampaigns: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!profile?.uid) return;
 
       try {
-        // Fetch wallet
-        const walletSnap = await get(ref(database, `wallets/${profile.uid}`));
-        if (walletSnap.exists()) {
-          setWallet(walletSnap.val());
-        }
+        setLoading(true);
+        setError(null);
 
-        // Fetch recent work submissions
-        const worksSnap = await get(ref(database, `works/${profile.uid}`));
-        if (worksSnap.exists()) {
-          const worksData = worksSnap.val();
+        // Fetch Wallet
+        const walletData = await fetchWalletData(profile.uid);
+        if (walletData) setWallet(walletData);
+
+        // Fetch Works
+        const worksData = await fetchWorks(profile.uid);
+        if (worksData) {
           const worksArray: WorkSubmission[] = Object.entries(worksData).map(([id, data]: [string, any]) => ({
             id,
-            ...data,
+            campaignId: data.campaignId || '',
+            campaignTitle: data.campaignTitle || '',
+            status: data.status || 'pending',
+            submittedAt: data.submittedAt || Date.now(),
+            reward: data.reward || 0,
           }));
           
-          // Sort by date and get recent 5
           worksArray.sort((a, b) => b.submittedAt - a.submittedAt);
           setRecentWork(worksArray.slice(0, 5));
-
-          // Calculate stats
-          const pending = worksArray.filter(w => w.status === 'pending').length;
-          const approved = worksArray.filter(w => w.status === 'approved').length;
-          const rejected = worksArray.filter(w => w.status === 'rejected').length;
           
           setStats(prev => ({
             ...prev,
-            pendingWorks: pending,
-            approvedWorks: approved,
-            rejectedWorks: rejected,
+            pendingWorks: worksArray.filter(w => w.status === 'pending').length,
+            approvedWorks: worksArray.filter(w => w.status === 'approved').length,
+            rejectedWorks: worksArray.filter(w => w.status === 'rejected').length,
           }));
         }
 
-        // Count active campaigns created by user
-        const campaignsSnap = await get(ref(database, 'campaigns'));
-        if (campaignsSnap.exists()) {
-          const campaignsData = campaignsSnap.val();
-          const userCampaigns = Object.values(campaignsData).filter(
-            (c: any) => c.creatorId === profile.uid && c.status === 'active'
+        // Fetch Campaigns
+        const campaignsData = await fetchCampaigns();
+        if (campaignsData) {
+          const allCampaigns = Object.values(campaignsData) as Campaign[];
+          const filtered = allCampaigns.filter(
+            (c: Campaign) => c.creatorId === profile.uid && c.status === 'active'
           );
-          setStats(prev => ({ ...prev, activeCampaigns: userCampaigns.length }));
+          setUserCampaigns(filtered);
+          setStats(prev => ({ ...prev, activeCampaigns: filtered.length }));
         }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
+
+      } catch (err) {
+        console.error("Dashboard Error:", err);
+        setError("Failed to load data.");
       } finally {
         setLoading(false);
       }
@@ -105,272 +124,117 @@ const Dashboard = () => {
     fetchDashboardData();
   }, [profile?.uid]);
 
+  // --- 3. SORTING LOGIC ---
+  const handleSortByPriority = () => {
+    const priorityOrder: Record<string, number> = { high: 1, medium: 2, low: 3 };
+    const sorted = [...userCampaigns].sort((a, b) => {
+      const pA = a.priority || 'low';
+      const pB = b.priority || 'low';
+      return isSorted ? 0 : priorityOrder[pA] - priorityOrder[pB];
+    });
+    setUserCampaigns(sorted);
+    setIsSorted(!isSorted);
+  };
+
+  const getPriorityBadge = (priority: string) => {
+    if (priority === 'high') return <Badge className="bg-destructive text-white border-none text-[10px]">High</Badge>;
+    if (priority === 'medium') return <Badge className="bg-amber-500 text-white border-none text-[10px]">Medium</Badge>;
+    return <Badge variant="secondary" className="text-[10px]">Low</Badge>;
+  };
+
   const totalBalance = (wallet?.earnedBalance || 0) + (wallet?.addedBalance || 0);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return <Badge variant="outline" className="bg-pending/10 text-pending border-pending/30">Pending</Badge>;
-      case 'approved':
-        return <Badge variant="outline" className="bg-success/10 text-success border-success/30">Approved</Badge>;
-      case 'rejected':
-        return <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">Rejected</Badge>;
-      default:
-        return null;
-    }
-  };
+  if (loading && !profile) return <div className="p-20 text-center">Loading...</div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
-      
       <main className="flex-1 container mx-auto px-4 py-8">
-        {/* Welcome Section */}
         <div className="mb-8">
-          <h1 className="font-display text-3xl font-bold text-foreground mb-2">
-            Welcome back, {profile?.fullName?.split(' ')[0] || 'User'}! 👋
-          </h1>
-          <p className="text-muted-foreground">
-            Here's an overview of your WorkHub activity.
-          </p>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          {error && <p className="text-destructive mt-2">{error}</p>}
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Card className="card-hover">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Total Balance</p>
-                  <p className="font-display text-2xl font-bold text-foreground flex items-center">
-                    <IndianRupee className="h-5 w-5" />
-                    {totalBalance.toFixed(2)}
-                  </p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Wallet className="h-5 w-5 text-primary" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="card-hover">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Approved Works</p>
-                  <p className="font-display text-2xl font-bold text-foreground">
-                    {profile?.approvedWorks || 0}
-                  </p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="card-hover">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Pending Works</p>
-                  <p className="font-display text-2xl font-bold text-foreground">
-                    {stats.pendingWorks}
-                  </p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-pending/10 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-pending" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="card-hover">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">My Campaigns</p>
-                  <p className="font-display text-2xl font-bold text-foreground">
-                    {stats.activeCampaigns}
-                  </p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                  <Briefcase className="h-5 w-5 text-accent" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+          <Card><CardContent className="pt-6">
+            <div className="flex justify-between items-center">
+              <div><p className="text-sm text-muted-foreground">Balance</p><p className="text-2xl font-bold">₹{totalBalance.toFixed(2)}</p></div>
+              <Wallet className="text-primary h-8 w-8 opacity-20" />
+            </div>
+          </CardContent></Card>
+          <Card><CardContent className="pt-6">
+            <div className="flex justify-between items-center">
+              <div><p className="text-sm text-muted-foreground">Approved</p><p className="text-2xl font-bold">{stats.approvedWorks}</p></div>
+              <CheckCircle2 className="text-success h-8 w-8 opacity-20" />
+            </div>
+          </CardContent></Card>
+          <Card><CardContent className="pt-6">
+            <div className="flex justify-between items-center">
+              <div><p className="text-sm text-muted-foreground">Pending</p><p className="text-2xl font-bold">{stats.pendingWorks}</p></div>
+              <Clock className="text-amber-500 h-8 w-8 opacity-20" />
+            </div>
+          </CardContent></Card>
+          <Card><CardContent className="pt-6">
+            <div className="flex justify-between items-center">
+              <div><p className="text-sm text-muted-foreground">Active Campaigns</p><p className="text-2xl font-bold">{stats.activeCampaigns}</p></div>
+              <Briefcase className="text-blue-500 h-8 w-8 opacity-20" />
+            </div>
+          </CardContent></Card>
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          <Link to="/campaigns">
-            <Card className="card-hover cursor-pointer h-full">
-              <CardContent className="pt-6 flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-gradient-primary flex items-center justify-center">
-                  <Briefcase className="h-6 w-6 text-primary-foreground" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground">Browse Campaigns</h3>
-                  <p className="text-sm text-muted-foreground">Find tasks to complete</p>
-                </div>
-                <ArrowRight className="h-5 w-5 text-muted-foreground" />
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link to="/campaigns/create">
-            <Card className="card-hover cursor-pointer h-full">
-              <CardContent className="pt-6 flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-gradient-accent flex items-center justify-center">
-                  <PlusCircle className="h-6 w-6 text-accent-foreground" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground">Create Campaign</h3>
-                  <p className="text-sm text-muted-foreground">Get work done by others</p>
-                </div>
-                <ArrowRight className="h-5 w-5 text-muted-foreground" />
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link to="/leaderboard">
-            <Card className="card-hover cursor-pointer h-full">
-              <CardContent className="pt-6 flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-gradient-success flex items-center justify-center">
-                  <Trophy className="h-6 w-6 text-success-foreground" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground">Leaderboard</h3>
-                  <p className="text-sm text-muted-foreground">See top earners</p>
-                </div>
-                <ArrowRight className="h-5 w-5 text-muted-foreground" />
-              </CardContent>
-            </Card>
-          </Link>
-        </div>
-
-        {/* Recent Work */}
-        <div className="grid lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg font-semibold">Recent Work</CardTitle>
-              <Link to="/my-work">
-                <Button variant="ghost" size="sm" className="gap-1">
-                  View All
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </CardHeader>
-            <CardContent>
-              {recentWork.length === 0 ? (
-                <div className="text-center py-8">
-                  <Briefcase className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-                  <p className="text-muted-foreground">No work submissions yet</p>
-                  <Link to="/campaigns">
-                    <Button variant="outline" size="sm" className="mt-4">
-                      Start Working
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentWork.map((work) => (
-                    <div
-                      key={work.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-foreground truncate">
-                          {work.campaignTitle}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(work.submittedAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-foreground flex items-center">
-                          <IndianRupee className="h-3 w-3" />
-                          {work.reward}
-                        </span>
-                        {getStatusBadge(work.status)}
-                      </div>
+        {/* Priority Visualizer Section */}
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">Campaign Priority</h2>
+            <Button variant="outline" size="sm" onClick={handleSortByPriority} className="gap-2">
+              <ArrowUpDown className="h-4 w-4" /> {isSorted ? "Clear Sort" : "Sort by Priority"}
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {userCampaigns.length === 0 ? (
+              <p className="text-muted-foreground text-sm italic">No active campaigns.</p>
+            ) : (
+              userCampaigns.map((camp, idx) => (
+                <Card key={idx} className={`border-l-4 ${camp.priority === 'high' ? 'border-l-destructive' : camp.priority === 'medium' ? 'border-l-amber-500' : 'border-l-blue-400'}`}>
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-4">
+                      <h3 className="font-bold text-sm truncate w-2/3">{camp.title}</h3>
+                      {getPriorityBadge(camp.priority)}
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Wallet Summary */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg font-semibold">Wallet Summary</CardTitle>
-              <Link to="/wallet">
-                <Button variant="ghost" size="sm" className="gap-1">
-                  Manage Wallet
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 rounded-lg bg-success/5 border border-success/20">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                      <TrendingUp className="h-5 w-5 text-success" />
+                    <div className="flex justify-between text-[11px] font-bold">
+                      <span className="text-muted-foreground">{camp.completedWorkers}/{camp.totalWorkers} Workers</span>
+                      <span className="text-primary font-bold">₹{camp.rewardPerWorker}</span>
                     </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Recent Activity Table */}
+        <Card>
+          <CardHeader><CardTitle className="text-lg">Recent Work Activity</CardTitle></CardHeader>
+          <CardContent>
+            {recentWork.length === 0 ? (
+              <p className="text-center py-4 text-muted-foreground text-sm">No activity found.</p>
+            ) : (
+              <div className="space-y-2">
+                {recentWork.map((work) => (
+                  <div key={work.id} className="flex justify-between items-center p-3 bg-muted/40 rounded-md">
                     <div>
-                      <p className="text-sm text-muted-foreground">Earned Balance</p>
-                      <p className="font-semibold text-foreground">From completed tasks</p>
+                      <p className="text-sm font-semibold">{work.campaignTitle}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase">{new Date(work.submittedAt).toDateString()}</p>
                     </div>
+                    <Badge variant="outline" className="text-[10px] uppercase">{work.status}</Badge>
                   </div>
-                  <p className="font-display text-xl font-bold text-success flex items-center">
-                    <IndianRupee className="h-4 w-4" />
-                    {(wallet?.earnedBalance || 0).toFixed(2)}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Wallet className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Added Balance</p>
-                      <p className="font-semibold text-foreground">For campaigns</p>
-                    </div>
-                  </div>
-                  <p className="font-display text-xl font-bold text-primary flex items-center">
-                    <IndianRupee className="h-4 w-4" />
-                    {(wallet?.addedBalance || 0).toFixed(2)}
-                  </p>
-                </div>
-
-                {(wallet?.pendingAddMoney || 0) > 0 && (
-                  <div className="flex items-center justify-between p-4 rounded-lg bg-pending/5 border border-pending/20">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-pending/10 flex items-center justify-center">
-                        <Clock className="h-5 w-5 text-pending" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Pending Approval</p>
-                        <p className="font-semibold text-foreground">Add money requests</p>
-                      </div>
-                    </div>
-                    <p className="font-display text-xl font-bold text-pending flex items-center">
-                      <IndianRupee className="h-4 w-4" />
-                      {(wallet?.pendingAddMoney || 0).toFixed(2)}
-                    </p>
-                  </div>
-                )}
+                ))}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
-
       <Footer />
     </div>
   );

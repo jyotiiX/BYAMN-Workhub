@@ -1,0 +1,111 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && $uid === auth.uid",
+        ".write": "auth != null && $uid === auth.uid",
+        ".validate": "newData.hasChildren(['uid', 'email', 'fullName', 'role', 'isBlocked']) && newData.child('uid').val() === $uid && newData.child('email').val().matches(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}$/) && newData.child('fullName').val().length() > 0 && newData.child('fullName').val().length() <= 50 && (newData.child('role').val() === 'user' || newData.child('role').val() === 'admin') && (newData.child('isBlocked').val() === false || newData.child('isBlocked').val() === true)",
+        "email": {
+          ".validate": "newData.val().matches(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}$/)"
+        },
+        "fullName": {
+          ".validate": "newData.val().length() > 0 && newData.val().length() <= 50 && newData.val().matches(/^[a-zA-Z\\\\s\\\\-'\\\\p{L}]+$/)"
+        },
+        "role": {
+          ".validate": "newData.val() === 'user' || newData.val() === 'admin'"
+        },
+        "isBlocked": {
+          ".validate": "newData.val() === false || newData.val() === true"
+        },
+        "createdAt": {
+          ".validate": "newData.val() >= 0"
+        },
+        "bio": {
+          ".validate": "newData.val().length() <= 500"
+        },
+        "profileImage": {
+          ".validate": "newData.val() == null || newData.val().matches(/^https?:\\\\/\\\\/[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}/)"
+        },
+        "socialLinks": {
+          ".validate": "newData.hasChildren() == false || ((newData.child('linkedin').val() == null || newData.child('linkedin').val().matches(/^https?:\\\\/\\\\/[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}/)) && (newData.child('twitter').val() == null || newData.child('twitter').val().matches(/^https?:\\\\/\\\\/[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}/)) && (newData.child('instagram').val() == null || newData.child('instagram').val().matches(/^https?:\\\\/\\\\/[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}/)) && (newData.child('youtube').val() == null || newData.child('youtube').val().matches(/^https?:\\\\/\\\\/[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}/)) && (newData.child('other').val() == null || newData.child('other').val().matches(/^https?:\\\\/\\\\/[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}/)))"
+        }
+      }
+    },
+    "wallets": {
+      "$uid": {
+        ".read": "auth != null && ($uid === auth.uid || root.child('users/'+auth.uid+'/role').val() === 'admin')",
+        ".write": "auth != null && $uid === auth.uid",
+        ".validate": "newData.hasChildren(['earnedBalance', 'addedBalance', 'pendingAddMoney', 'totalWithdrawn']) && newData.child('earnedBalance').val() >= 0 && newData.child('addedBalance').val() >= 0 && newData.child('pendingAddMoney').val() >= 0 && newData.child('totalWithdrawn').val() >= 0",
+        "earnedBalance": {
+          ".validate": "newData.val() >= 0"
+        },
+        "addedBalance": {
+          ".validate": "newData.val() >= 0"
+        },
+        "pendingAddMoney": {
+          ".validate": "newData.val() >= 0"
+        },
+        "totalWithdrawn": {
+          ".validate": "newData.val() >= 0"
+        }
+      }
+    },
+    "transactions": {
+      "$uid": {
+        ".read": "auth != null && $uid === auth.uid",
+        ".write": "auth != null && $uid === auth.uid",
+        "$transactionId": {
+          ".validate": "newData.hasChildren(['type', 'amount', 'status', 'createdAt']) && (newData.child('type').val() == 'add_money' || newData.child('type').val() == 'withdrawal' || newData.child('type').val() == 'earning' || newData.child('type').val() == 'campaign_spend') && newData.child('amount').val() > 0 && (newData.child('status').val() == 'pending' || newData.child('status').val() == 'approved' || newData.child('status').val() == 'rejected' || newData.child('status').val() == 'paid') && newData.child('createdAt').val() >= 0",
+          "type": {
+            ".validate": "newData.val() == 'add_money' || newData.val() == 'withdrawal' || newData.val() == 'earning' || newData.val() == 'campaign_spend'"
+          },
+          "amount": {
+            ".validate": "newData.val() > 0 && newData.val() <= 100000"
+          },
+          "status": {
+            ".validate": "newData.val() == 'pending' || newData.val() == 'approved' || newData.val() == 'rejected' || newData.val() == 'paid'"
+          },
+          "createdAt": {
+            ".validate": "newData.val() >= 0"
+          }
+        }
+      }
+    },
+    "campaigns": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$campaignId": {
+        ".validate": "newData.hasChildren(['title', 'description', 'creatorId', 'totalBudget', 'remainingBudget', 'totalWorkers', 'rewardPerWorker', 'createdAt']) && newData.child('title').val().length() > 0 && newData.child('title').val().length() <= 100 && newData.child('description').val().length() > 0 && newData.child('description').val().length() <= 1000 && newData.child('creatorId').val().matches(/^[a-zA-Z0-9]+$/) && newData.child('totalBudget').val() >= 0 && newData.child('remainingBudget').val() >= 0 && newData.child('totalWorkers').val() > 0 && newData.child('totalWorkers').val() <= 10000 && newData.child('rewardPerWorker').val() >= 0.5 && newData.child('rewardPerWorker').val() <= 10000 && newData.child('createdAt').val() >= 0",
+        "creatorId": {
+          ".write": "auth != null && newData.val() === auth.uid"
+        }
+      }
+    },
+    "works": {
+      "$userId": {
+        ".read": "auth != null && ($userId === auth.uid || root.child('users/'+auth.uid+'/role').val() === 'admin')",
+        ".write": "auth != null && $userId === auth.uid",
+        "$workId": {
+          ".validate": "newData.hasChildren(['userId', 'campaignId', 'status', 'reward']) && newData.child('userId').val() === $userId && newData.child('campaignId').val().matches(/^[a-zA-Z0-9]+$/) && (newData.child('status').val() == 'pending' || newData.child('status').val() == 'approved' || newData.child('status').val() == 'rejected') && newData.child('reward').val() >= 0",
+          "status": {
+            ".write": "root.child('users/'+auth.uid+'/role').val() === 'admin'"
+          }
+        }
+      }
+    },
+    "adminRequests": {
+      ".read": "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'",
+      ".write": "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'",
+      "addMoney": {
+        "$requestId": {
+          ".validate": "newData.hasChildren(['userId', 'amount', 'status', 'createdAt']) && (newData.child('status').val() == 'pending' || newData.child('status').val() == 'approved' || newData.child('status').val() == 'rejected') && newData.child('amount').val() > 0 && newData.child('amount').val() <= 100000 && newData.child('createdAt').val() >= 0"
+        }
+      },
+      "withdrawals": {
+        "$requestId": {
+          ".validate": "newData.hasChildren(['userId', 'amount', 'status', 'createdAt']) && (newData.child('status').val() == 'pending' || newData.child('status').val() == 'approved' || newData.child('status').val() == 'rejected') && newData.child('amount').val() > 0 && newData.child('amount').val() <= 50000 && newData.child('createdAt').val() >= 0"
+        }
+      }
+    }
+  }
+}
