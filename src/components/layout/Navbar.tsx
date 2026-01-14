@@ -116,6 +116,20 @@ const Navbar = () => {
 
           {/* Right Side */}
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="hidden md:flex h-9 w-9 mr-1"
+            >
+              {theme === 'dark' ? (
+                <Sun className="h-4 w-4 transition-all" />
+              ) : (
+                <Moon className="h-4 w-4 transition-all" />
+              )}
+              <span className="sr-only">Toggle theme</span>
+            </Button>
+            
             {user ? (
               <>
                 <Link to="/campaigns/create">
