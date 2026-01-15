@@ -17,7 +17,10 @@ import {
   Clock,
   ArrowRight,
   Briefcase,
-  TrendingUp
+  TrendingUp,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 
 interface Campaign {
@@ -41,6 +44,8 @@ const Campaigns = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'high-reward' | 'new'>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'reward' | 'status'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Use the debounce hook with a 500ms delay
   const debouncedSearch = useDebounce(searchQuery, 500);
@@ -84,18 +89,25 @@ const Campaigns = () => {
       );
     }
     
-    // Apply sorting filters
-    switch (filter) {
-      case 'high-reward':
-        result.sort((a, b) => b.rewardPerWorker - a.rewardPerWorker);
-        break;
-      case 'new':
-        result.sort((a, b) => b.createdAt - a.createdAt);
-        break;
-    }
+    // Apply sorting
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'date':
+          comparison = a.createdAt - b.createdAt;
+          break;
+        case 'reward':
+          comparison = a.rewardPerWorker - b.rewardPerWorker;
+          break;
+        case 'status':
+          comparison = a.status.localeCompare(b.status);
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
     
     setFilteredCampaigns(result);
-  }, [debouncedSearch, filter, campaigns]);
+  }, [debouncedSearch, sortBy, sortOrder, campaigns]);
 
   const getSpotsLeft = (campaign: Campaign) => {
     return campaign.totalWorkers - campaign.completedWorkers;
@@ -160,6 +172,58 @@ const Campaigns = () => {
               Newest
             </Button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-6">
+          <span className="text-sm text-muted-foreground self-center mr-2">Sort by:</span>
+          <Button
+            variant={sortBy === 'date' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              if (sortBy === 'date') {
+                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+              } else {
+                setSortBy('date');
+                setSortOrder('desc');
+              }
+            }}
+            className="gap-1"
+          >
+            Date
+            {sortBy === 'date' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+          </Button>
+          <Button
+            variant={sortBy === 'reward' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              if (sortBy === 'reward') {
+                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+              } else {
+                setSortBy('reward');
+                setSortOrder('desc');
+              }
+            }}
+            className="gap-1"
+          >
+            Reward
+            {sortBy === 'reward' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+          </Button>
+          <Button
+            variant={sortBy === 'status' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              if (sortBy === 'status') {
+                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+              } else {
+                setSortBy('status');
+                setSortOrder('asc');
+              }
+            }}
+            className="gap-1"
+          >
+            Status
+            {sortBy === 'status' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+          </Button>
         </div>
 
         {loading ? (

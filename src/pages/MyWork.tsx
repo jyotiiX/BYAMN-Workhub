@@ -21,11 +21,9 @@ import {
   XCircle,
   ExternalLink,
   AlertCircle,
- feature/debounced-search-work-listings
-  Search // Added Search Icon
-
-  ArrowUpDown
-
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { Input } from '@/components/ui/input'; // Ensure this exists in your UI folder
 import { useDebounce } from '@/hooks/useDebounce'; // Import our new hook
@@ -59,12 +57,8 @@ const MyWork = () => {
   const [works, setWorks] = useState<WorkSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
-  
-  // 1. Add Search State
-  const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearch = useDebounce(searchQuery, 300);
-
-  // ... fetchWorks useEffect remains the same
+  const [sortBy, setSortBy] = useState<'date' | 'priority'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
  feature/debounced-search-work-listings
   // 2. Updated Filtering Logic
@@ -104,11 +98,22 @@ const MyWork = () => {
   const filteredWorks =
     filter === 'all' ? works : works.filter(w => w.status === filter);
 
+  const sortedWorks = [...filteredWorks].sort((a, b) => {
+    let comparison = 0;
+    switch (sortBy) {
+      case 'date':
+        comparison = a.submittedAt - b.submittedAt;
+        break;
+      case 'priority':
+        comparison = priorityOrder[a.priority] - priorityOrder[b.priority];
+        break;
+    }
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+
   const sortByPriority = () => {
-    const sorted = [...works].sort(
-      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]
-    );
-    setWorks(sorted);
+    setSortBy('priority');
+    setSortOrder('asc');
   };
 
   const getPriorityBadge = (priority: Priority) => {
@@ -176,11 +181,40 @@ const MyWork = () => {
           <h1 className="font-display text-3xl font-bold text-foreground">
             My Work
           </h1>
-          <Button variant="outline" onClick={sortByPriority}>
-            <ArrowUpDown className="h-4 w-4 mr-2" />
-            Sort by Priority
-          </Button>
-
+          <div className="flex gap-2">
+            <Button
+              variant={sortBy === 'date' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                if (sortBy === 'date') {
+                  setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                } else {
+                  setSortBy('date');
+                  setSortOrder('desc');
+                }
+              }}
+              className="gap-1"
+            >
+              Date
+              {sortBy === 'date' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+            </Button>
+            <Button
+              variant={sortBy === 'priority' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                if (sortBy === 'priority') {
+                  setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                } else {
+                  setSortBy('priority');
+                  setSortOrder('asc');
+                }
+              }}
+              className="gap-1"
+            >
+              Priority
+              {sortBy === 'priority' && (sortOrder === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />)}
+            </Button>
+          </div>
         </div>
 
         <Tabs value={filter} onValueChange={(v) => setFilter(v as any)}>
@@ -230,10 +264,7 @@ const MyWork = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredWorks.map((work) => (
- feature/debounced-search-work-listings
-                  /* ... existing Card rendering ... */
-
+                {sortedWorks.map((work) => (
                   <Card key={work.id}>
                     <CardContent className="pt-6">
                       <div className="flex items-start justify-between gap-4">
