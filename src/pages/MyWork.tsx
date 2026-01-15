@@ -1,3 +1,6 @@
+feature/debounced-search-work-listings
+// ... existing imports
+
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, get } from 'firebase/database';
@@ -9,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Link } from 'react-router-dom';
+
 import { 
   Briefcase, 
   IndianRupee, 
@@ -21,6 +25,11 @@ import {
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
+import { Input } from '@/components/ui/input'; // Ensure this exists in your UI folder
+import { useDebounce } from '@/hooks/useDebounce'; // Import our new hook
+
+ feature/debounced-search-work-listings
+// ... interfaces
 
 type Priority = 'high' | 'medium' | 'low';
 
@@ -36,6 +45,7 @@ interface WorkSubmission {
   priority: Priority;
 }
 
+
 const priorityOrder: Record<Priority, number> = {
   high: 1,
   medium: 2,
@@ -50,9 +60,17 @@ const MyWork = () => {
   const [sortBy, setSortBy] = useState<'date' | 'priority'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  useEffect(() => {
-    const fetchWorks = async () => {
-      if (!profile?.uid) return;
+ feature/debounced-search-work-listings
+  // 2. Updated Filtering Logic
+  const filteredWorks = works.filter((work) => {
+    const matchesStatus = filter === 'all' || work.status === filter;
+    const matchesSearch = work.campaignTitle
+      .toLowerCase()
+      .includes(debouncedSearch.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  // ... stats and getStatus helpers remain the same
 
       try {
         const worksSnap = await get(ref(database, `works/${profile.uid}`));
@@ -129,9 +147,34 @@ const MyWork = () => {
     }
   };
 
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
+ feature/debounced-search-work-listings
+      
+      <main className="flex-1 container mx-auto px-4 py-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <h1 className="font-display text-3xl font-bold text-foreground">
+            My Work
+          </h1>
+          
+          {/* 3. Search Input Field */}
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search campaigns..."
+              className="pl-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Stats Section remains the same */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+           {/* ... existing stats cards ... */}
+
 
       <main className="flex-1 container mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
@@ -184,11 +227,40 @@ const MyWork = () => {
 
           <TabsContent value={filter}>
             {loading ? (
+ feature/debounced-search-work-listings
+              <div className="space-y-4">
+                 {/* ... existing skeleton loading ... */}
+              </div>
+            ) : filteredWorks.length === 0 ? (
+              <div className="text-center py-16">
+                <Briefcase className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+                <h2 className="font-display text-xl font-bold text-foreground mb-2">
+                  {debouncedSearch ? "No matching results" : "No Work Found"}
+                </h2>
+                <p className="text-muted-foreground mb-6">
+                  {debouncedSearch 
+                    ? `We couldn't find anything matching "${debouncedSearch}"`
+                    : filter === 'all' 
+                      ? "You haven't submitted any work yet" 
+                      : `No ${filter} submissions`}
+                </p>
+                {!debouncedSearch && (
+                  <Link to="/campaigns">
+                    <Button>Browse Campaigns</Button>
+                  </Link>
+                )}
+                {debouncedSearch && (
+                  <Button variant="outline" onClick={() => setSearchQuery('')}>
+                    Clear Search
+                  </Button>
+                )}
+
               <p>Loading...</p>
             ) : filteredWorks.length === 0 ? (
               <div className="text-center py-16">
                 <Briefcase className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
                 <p className="text-muted-foreground">No work found</p>
+
               </div>
             ) : (
               <div className="space-y-4">
@@ -244,6 +316,7 @@ const MyWork = () => {
                       </div>
                     </CardContent>
                   </Card>
+
                 ))}
               </div>
             )}

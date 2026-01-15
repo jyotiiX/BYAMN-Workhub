@@ -116,6 +116,20 @@ const Navbar = () => {
 
           {/* Right Side */}
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="hidden md:flex h-9 w-9 mr-1"
+            >
+              {theme === 'dark' ? (
+                <Sun className="h-4 w-4 transition-all" />
+              ) : (
+                <Moon className="h-4 w-4 transition-all" />
+              )}
+              <span className="sr-only">Toggle theme</span>
+            </Button>
+            
             {user ? (
               <>
                 <Link to="/campaigns/create">
@@ -157,8 +171,8 @@ const Navbar = () => {
                             {link.label}
                           </Link>
                         </DropdownMenuItem>
-                      ))}
-                    </div>
+                      </>
+                    )}
                     {profile?.role === 'admin' && (
                       <>
                         <DropdownMenuSeparator />
@@ -168,142 +182,11 @@ const Navbar = () => {
                             Admin Panel
                           </Link>
                         </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link to="/analytics" className="flex items-center gap-2">
+                            <BarChart3 className="h-4 w-4" />
+                            Analytics
+                          </Link>
+                        </DropdownMenuItem>
                       </>
                     )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout} className="text-destructive">
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Logout
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            ) : (
-              <>
-                <Link to="/auth">
-                  <Button variant="ghost" className="hidden md:flex">Login</Button>
-                </Link>
-                <Link to="/auth?mode=register">
-                  <Button variant="accent" className="hidden md:flex">Get Started</Button>
-                </Link>
-              </>
-            )}
-
-            {/* Mobile Menu Button */}
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-full max-w-xs p-0">
-                <div className="flex flex-col gap-4 h-full">
-                  <div className="flex items-center justify-between pb-4 border-b border-border/30">
-                    <Link to="/" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-r from-primary to-accent">
-                        <span className="text-lg font-bold text-primary-foreground">B</span>
-                      </div>
-                      <span className="font-display text-xl font-bold text-foreground">
-                        BYAMN <span className="text-accent">WorkHub</span>
-                      </span>
-                    </Link>
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="md:hidden"
-                    >
-                      <X className="h-5 w-5" />
-                    </Button>
-                  </div>
-                  
-                  <div className="space-y-1 flex-1 overflow-y-auto">
-                    {navLinks.map((link) => (
-                      <Link
-                        key={link.path}
-                        to={link.path}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                          isActive(link.path)
-                            ? 'bg-primary/10 text-primary border-l-4 border-primary'
-                            : 'text-muted-foreground hover:bg-muted'
-                        }`}
-                      >
-                        <link.icon className="h-5 w-5" />
-                        {link.label}
-                      </Link>
-                    ))}
-                  </div>
-
-                  {user && (
-                    <div className="pt-4 border-t border-border/30">
-                      <div className="space-y-1">
-                        {userLinks.map((link) => (
-                          <Link
-                            key={link.path}
-                            to={link.path}
-                            onClick={() => setMobileMenuOpen(false)}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                              isActive(link.path)
-                                ? 'bg-primary/10 text-primary border-l-4 border-primary'
-                                : 'text-muted-foreground hover:bg-muted'
-                            }`}
-                          >
-                            <link.icon className="h-5 w-5" />
-                            {link.label}
-                          </Link>
-                        ))}
-                        {profile?.role === 'admin' && (
-                          <Link
-                            to="/admin"
-                            onClick={() => setMobileMenuOpen(false)}
-                            className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-muted"
-                          >
-                            <Shield className="h-5 w-5" />
-                            Admin Panel
-                          </Link>
-                        )}
-                        <button
-                          onClick={handleLogout}
-                          className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-destructive hover:bg-destructive/10"
-                        >
-                          <LogOut className="h-5 w-5" />
-                          Logout
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {!user && (
-                    <div className="pt-4 border-t border-border/30 flex flex-col gap-3">
-                      <Link to="/auth" onClick={() => setMobileMenuOpen(false)}>
-                        <Button className="w-full" variant="outline">Login</Button>
-                      </Link>
-                      <Link to="/auth?mode=register" onClick={() => setMobileMenuOpen(false)}>
-                        <Button className="w-full" variant="accent">Get Started</Button>
-                      </Link>
-                    </div>
-                  )}
-
-                  <div className="pt-4 border-t border-border/30 flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Theme</span>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                      className="h-9 w-9"
-                    >
-                      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
-              </SheetContent>
-            </Sheet>
-          </div>
-        </div>
-      </div>
-    </nav>
-  );
-};
-
-export default Navbar;

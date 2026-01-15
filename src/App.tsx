@@ -1,31 +1,27 @@
-import { useEffect } from "react";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from "@/contexts/AuthContext";
-import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import { NotificationProvider } from "@/contexts/NotificationContext";
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 // Pages
-import Landing from "./pages/Landing";
-import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard";
-import Campaigns from "./pages/Campaigns";
-import CampaignDetail from "./pages/CampaignDetail";
-import CreateCampaign from "./pages/CreateCampaign";
-import Leaderboard from "./pages/Leaderboard";
-import Wallet from "./pages/Wallet";
-import Profile from "./pages/Profile";
-import ProfileEdit from "./pages/ProfileEdit";
-import MyWork from "./pages/MyWork";
-import NotFound from "./pages/NotFound";
-import AdminDashboard from "./pages/AdminDashboard";
-import About from "./pages/About";
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import Terms from "./pages/Terms";
+import Landing from '@/pages/Landing';
+import Auth from '@/pages/Auth';
+import Dashboard from '@/pages/Dashboard';
+import Campaigns from '@/pages/Campaigns';
+import CreateCampaign from '@/pages/CreateCampaign';
+import MyWork from '@/pages/MyWork';
+import Wallet from '@/pages/Wallet';
+import Profile from '@/pages/Profile';
+import ProfileEdit from '@/pages/ProfileEdit';
+import Leaderboard from '@/pages/Leaderboard';
+import AdminDashboard from '@/pages/AdminDashboard';
+import Messages from '@/pages/Messages';
+import Analytics from '@/pages/Analytics';
+import NotFound from '@/pages/NotFound';
 
-const queryClient = new QueryClient();
+// Layout
+import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
 
 const App = () => {
   useEffect(() => {
