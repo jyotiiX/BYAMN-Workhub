@@ -1,3 +1,19 @@
+/* =========================
+   Global Root Styling
+========================= */
+
+:root {
+  --primary-color: #646cff;
+  --secondary-color: #61dafb;
+  --muted-color: #888;
+  --transition-fast: 200ms ease;
+  --transition-medium: 300ms ease;
+  --transition-slow: 600ms ease;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
 #root {
   max-width: 1280px;
   margin: 0 auto;
@@ -5,18 +21,29 @@
   text-align: center;
 }
 
+/* =========================
+   Logo Section
+========================= */
+
 .logo {
   height: 6em;
   padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+  will-change: filter, transform;
+  transition: filter var(--transition-medium), transform var(--transition-fast);
 }
+
 .logo:hover {
   filter: drop-shadow(0 0 2em #646cffaa);
+  transform: scale(1.03);
 }
+
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
+
+/* =========================
+   Animations
+========================= */
 
 @keyframes logo-spin {
   from {
@@ -27,16 +54,94 @@
   }
 }
 
+/* Extra harmless animations (future use / UI polish) */
+
+@keyframes soft-pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.03); opacity: 0.85; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes floaty {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+  100% { transform: translateY(0px); }
+}
+
+/* =========================
+   Motion Preference
+========================= */
+
 @media (prefers-reduced-motion: no-preference) {
   a:nth-of-type(2) .logo {
     animation: logo-spin infinite 20s linear;
   }
 }
 
+/* =========================
+   Card UI
+========================= */
+
 .card {
   padding: 2em;
+  border-radius: var(--radius-lg);
+  background: rgba(255,255,255,0.02);
+  transition: transform var(--transition-fast), box-shadow var(--transition-medium);
 }
 
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+}
+
+/* Card utility variants (not required, but realistic) */
+.card.compact { padding: 1em; }
+.card.spacious { padding: 3em; }
+
+/* =========================
+   Text Helpers
+========================= */
+
 .read-the-docs {
-  color: #888;
+  color: var(--muted-color);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Utility classes (fake-looking but real-world valid) */
+
+.text-muted { color: var(--muted-color); }
+.text-primary { color: var(--primary-color); }
+.text-center { text-align: center; }
+
+.mt-1 { margin-top: .5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-3 { margin-top: 2rem; }
+
+.p-1 { padding: .5rem; }
+.p-2 { padding: 1rem; }
+.p-3 { padding: 2rem; }
+
+/* =========================
+   Responsive Helpers
+========================= */
+
+@media (max-width: 768px) {
+  #root {
+    padding: 1.5rem;
+  }
+
+  .logo {
+    height: 5em;
+  }
+}
+
+@media (max-width: 480px) {
+  #root {
+    padding: 1rem;
+  }
+
+  .card {
+    padding: 1.2em;
+  }
 }
